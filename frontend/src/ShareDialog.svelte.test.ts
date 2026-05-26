@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { page } from "@vitest/browser/context";
+import { page, userEvent } from "@vitest/browser/context";
 // Importing the component registers the <datasette-share-dialog> custom element.
 import "./ShareDialog.svelte";
 import type { ShareState } from "./lib/types";
@@ -272,7 +272,7 @@ describe("<datasette-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const input = page.getByRole("searchbox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Search people" });
     await expect.element(input).toBeInTheDocument();
     await input.fill("car");
 
@@ -281,12 +281,22 @@ describe("<datasette-share-dialog> add-box pickers", () => {
       expect(search).toBeTruthy();
       expect(search!.url).toContain("q=car");
     });
+    // Results render in the floating overlay listbox.
     await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
+    expect(
+      document.querySelectorAll("#datasette-share-results [role='option']")
+        .length,
+    ).toBe(1);
   });
 
-  it("selecting a person + Share calls grant and emits share-granted", async () => {
+  it("selecting people + Share grants the batch and emits share-granted per pill", async () => {
     on("/profiles/api/search", () =>
-      json({ results: [{ id: "carol", display_name: "Carol Smith", kind: "user" }] }),
+      json({
+        results: [
+          { id: "carol", display_name: "Carol Smith", kind: "user" },
+          { id: "dave", display_name: "Dave Jones", kind: "user" },
+        ],
+      }),
     );
     on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
       const req = JSON.parse(init.body as string);
@@ -298,33 +308,144 @@ describe("<datasette-share-dialog> add-box pickers", () => {
           role: req.role,
           actions: ["read", "write"],
           kind: "user",
-          display_name: "Carol Smith",
+          display_name: req.actor_id === "carol" ? "Carol Smith" : "Dave Jones",
         },
       });
     });
     on("/resource/", () => json(STATE));
 
     const { events } = mount(BASE_ATTRS);
-    const input = page.getByRole("searchbox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Search people" });
     await expect.element(input).toBeInTheDocument();
-    await input.fill("car");
-    await page.getByRole("option", { name: /Carol Smith/ }).click();
 
+    // Pick Carol — she becomes a removable pill, not an immediate grant.
+    await input.fill("ca");
+    await page.getByRole("option", { name: /Carol Smith/ }).click();
+    // Clicking adds the pill and clears the box; no grant call yet.
+    expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
+    await expect
+      .element(page.getByRole("button", { name: "Remove Carol Smith" }))
+      .toBeInTheDocument();
+
+    // Pick Dave too.
+    await input.fill("da");
+    await page.getByRole("option", { name: /Dave Jones/ }).click();
+    await expect
+      .element(page.getByRole("button", { name: "Remove Dave Jones" }))
+      .toBeInTheDocument();
+
+    // Share grants BOTH pills at the chosen role.
     const shareBtn = page.getByRole("button", { name: "Share", exact: true });
     await shareBtn.click();
 
     await vi.waitFor(() => {
-      const g = calls.find((c) => c.url.endsWith("/grant"));
-      expect(g).toBeTruthy();
-      expect(g!.method).toBe("POST");
-      expect(g!.body).toMatchObject({ actor_id: "carol", role: "Editor" });
+      const grants = calls.filter((c) => c.url.endsWith("/grant"));
+      expect(grants).toHaveLength(2);
+      expect(grants.map((g) => (g.body as { actor_id: string }).actor_id)).toEqual([
+        "carol",
+        "dave",
+      ]);
+      grants.forEach((g) =>
+        expect(g.body).toMatchObject({ role: "Editor" }),
+      );
     });
-    await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(1));
-    expect(events["share-granted"]![0]!.detail).toMatchObject({
-      principal: "actor",
-      id: "carol",
-      role: "Editor",
-    });
+    await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(2));
+    expect(events["share-granted"]!.map((e) => e.detail.id)).toEqual([
+      "carol",
+      "dave",
+    ]);
+    // Pills cleared after a successful batch.
+    await vi.waitFor(() =>
+      expect(
+        document.querySelectorAll(".datasette-share-dialog__pill").length,
+      ).toBe(0),
+    );
+  });
+
+  it("Share is disabled until at least one pill is selected", async () => {
+    on("/profiles/api/search", () =>
+      json({ results: [{ id: "carol", display_name: "Carol Smith", kind: "user" }] }),
+    );
+    on("/resource/", () => json(STATE));
+
+    mount(BASE_ATTRS);
+    const shareBtn = page.getByRole("button", { name: "Share", exact: true });
+    await expect.element(shareBtn).toBeDisabled();
+
+    const input = page.getByRole("combobox", { name: "Search people" });
+    await input.fill("ca");
+    await page.getByRole("option", { name: /Carol Smith/ }).click();
+    await expect.element(shareBtn).toBeEnabled();
+  });
+
+  it("a selected pill can be removed before sharing", async () => {
+    on("/profiles/api/search", () =>
+      json({ results: [{ id: "carol", display_name: "Carol Smith", kind: "user" }] }),
+    );
+    on("/resource/", () => json(STATE));
+
+    mount(BASE_ATTRS);
+    const input = page.getByRole("combobox", { name: "Search people" });
+    await input.fill("ca");
+    await page.getByRole("option", { name: /Carol Smith/ }).click();
+    const removeBtn = page.getByRole("button", { name: "Remove Carol Smith" });
+    await expect.element(removeBtn).toBeInTheDocument();
+    await removeBtn.click();
+    await vi.waitFor(() =>
+      expect(
+        document.querySelectorAll(".datasette-share-dialog__pill").length,
+      ).toBe(0),
+    );
+    await expect
+      .element(page.getByRole("button", { name: "Share", exact: true }))
+      .toBeDisabled();
+  });
+
+  it("keyboard: ArrowDown highlights and Enter adds the result as a pill", async () => {
+    on("/profiles/api/search", () =>
+      json({
+        results: [
+          { id: "carol", display_name: "Carol Smith", kind: "user" },
+          { id: "dave", display_name: "Dave Jones", kind: "user" },
+        ],
+      }),
+    );
+    on("/resource/", () => json(STATE));
+
+    mount(BASE_ATTRS);
+    const input = page.getByRole("combobox", { name: "Search people" });
+    await input.fill("a");
+    await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
+
+    const el = input.element() as HTMLInputElement;
+    el.focus();
+    // ArrowDown twice → highlight the second option (Dave), Enter picks it.
+    await userEvent.keyboard("{ArrowDown}{ArrowDown}{Enter}");
+
+    await expect
+      .element(page.getByRole("button", { name: "Remove Dave Jones" }))
+      .toBeInTheDocument();
+    // No grant call — Enter only queues the pill.
+    expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
+  });
+
+  it("keyboard: Escape dismisses the results overlay", async () => {
+    on("/profiles/api/search", () =>
+      json({ results: [{ id: "carol", display_name: "Carol Smith", kind: "user" }] }),
+    );
+    on("/resource/", () => json(STATE));
+
+    mount(BASE_ATTRS);
+    const input = page.getByRole("combobox", { name: "Search people" });
+    await input.fill("ca");
+    await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
+
+    const el = input.element() as HTMLInputElement;
+    el.focus();
+    await userEvent.keyboard("{Escape}");
+    await vi.waitFor(() =>
+      expect(document.querySelector("#datasette-share-results")).toBeNull(),
+    );
   });
 
   it("adding a person who already has a grant focuses the existing row", async () => {
@@ -335,16 +456,20 @@ describe("<datasette-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const input = page.getByRole("searchbox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Search people" });
     await expect.element(input).toBeInTheDocument();
     await input.fill("bob");
-    // The result for bob should be filtered out (already granted).
+    // The result for bob should be filtered out (already granted): no option,
+    // and so no pill can be created for him.
     await vi.waitFor(() => {
       const opts = document.querySelectorAll(
         "#datasette-share-results [role='option']",
       );
       expect(opts.length).toBe(0);
     });
+    expect(document.querySelectorAll(".datasette-share-dialog__pill").length).toBe(
+      0,
+    );
     // No grant call was issued.
     expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
   });

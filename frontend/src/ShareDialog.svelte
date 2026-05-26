@@ -19,20 +19,24 @@
     orderGrants,
     selectableRoles,
   } from "./lib/grants";
+  import { debounce, filterAlreadyGranted, SEARCH_DEBOUNCE_MS } from "./lib/people";
+  import { filterAgents, normalizeAgents } from "./lib/agents";
   import {
-    actorLabel,
-    debounce,
-    existingActorGrant,
-    filterAlreadyGranted,
-    SEARCH_DEBOUNCE_MS,
-  } from "./lib/people";
-  import { agentLabel, filterAgents, normalizeAgents } from "./lib/agents";
-  import {
-    existingGroupGrant,
     filterGroups,
     groupIdStr,
     memberCountLabel,
   } from "./lib/groups";
+  import {
+    addPill,
+    batchGrantRequests,
+    blockingGrant,
+    hasPill,
+    pillFromActor,
+    pillFromGroup,
+    pillKey,
+    removePill,
+    type Pill,
+  } from "./lib/pills";
   import type {
     Actor,
     ActorKind,
@@ -321,17 +325,25 @@
   let groupList = $state<Group[]>([]); // groups are listed once, filtered locally
   let searching = $state(false);
   let pickerError = $state<string | null>(null);
-  // The principal selected from the result list, pending a Share click.
-  let selected = $state<
-    | { kind: "actor"; actor: Actor }
-    | { kind: "group"; group: Group }
-    | null
-  >(null);
+  // The principals queued for a batch share, rendered as removable pills. The
+  // role <select> + Share button apply to all of them at once.
+  let pills = $state<Pill[]>([]);
   let pickerRole = $state<string>("");
   let granting = $state(false);
   // Set to a principal key to flash/scroll its existing row when a duplicate
   // add is attempted; the row reads this to apply a highlight.
   let focusKey = $state<string | null>(null);
+
+  // --- overlay dropdown state ----------------------------------------------
+  // The results render as a floating autocomplete overlay (absolutely
+  // positioned under the search input) so the rest of the dialog doesn't
+  // reflow when results appear.
+  let dropdownOpen = $state(false);
+  // Index of the keyboard-highlighted option within the active tab's options,
+  // or -1 when nothing is highlighted yet.
+  let highlight = $state(-1);
+  let searchEl: HTMLInputElement | undefined = $state();
+  let addBoxEl: HTMLElement | undefined = $state();
 
   // Default the add-box role to the type's lowest write role (≈ Editor).
   $effect(() => {
@@ -341,16 +353,46 @@
     }
   });
 
-  // De-duped, ready-to-render result lists for the active tab.
+  // De-duped, ready-to-render result lists for the active tab. Already-granted
+  // principals are filtered by the lib helpers; already-queued pills are then
+  // dropped here so a pill can't be added twice.
   let peopleOptions = $derived(
-    filterAlreadyGranted(peopleResults, share?.grants ?? []),
+    filterAlreadyGranted(peopleResults, share?.grants ?? []).filter(
+      (a) => !hasPill(pills, { principal: "actor", id: a.id }),
+    ),
   );
   let agentOptions = $derived(
-    filterAgents(normalizeAgents(agentResults), share?.grants ?? []),
+    filterAgents(normalizeAgents(agentResults), share?.grants ?? []).filter(
+      (a) => !hasPill(pills, { principal: "actor", id: a.id }),
+    ),
   );
   let groupOptions = $derived(
-    filterGroups(groupList, share?.grants ?? [], query),
+    filterGroups(groupList, share?.grants ?? [], query).filter(
+      (g) => !hasPill(pills, { principal: "group", id: groupIdStr(g.id) }),
+    ),
   );
+
+  // The active tab's options as a flat list of pills, for keyboard navigation
+  // and Enter-to-pick. Order matches the rendered listbox.
+  let optionPills = $derived.by<Pill[]>(() => {
+    // agentOptions are already normalized to kind:"agent" upstream, so
+    // pillFromActor builds agent pills correctly without re-tagging.
+    if (activeTab === "people") return peopleOptions.map(pillFromActor);
+    if (activeTab === "agents") return agentOptions.map(pillFromActor);
+    if (activeTab === "groups") return groupOptions.map(pillFromGroup);
+    return [];
+  });
+
+  // Whether the floating results overlay should be visible: open + something
+  // to show (results, the "searching…"/"empty" hint, or a picker error).
+  let showDropdown = $derived(
+    dropdownOpen && canManage && activeTab != null,
+  );
+
+  // Keep the highlight within bounds as the option list changes.
+  $effect(() => {
+    if (highlight >= optionPills.length) highlight = optionPills.length - 1;
+  });
 
   // Debounced search runners (one per searchable tab). Re-created if `api`
   // changes (e.g. api-base attr changes) so they close over the live client.
@@ -404,42 +446,68 @@
     if (activeTab === tab) return;
     activeTab = tab;
     query = "";
-    selected = null;
     pickerError = null;
+    highlight = -1;
     runPeopleSearch.cancel();
     runAgentSearch.cancel();
-    if (tab === "groups") void loadGroups();
+    if (tab === "groups") {
+      void loadGroups();
+      openDropdown();
+    } else {
+      dropdownOpen = false;
+    }
   }
 
   function onQueryInput(event: Event) {
     query = (event.currentTarget as HTMLInputElement).value;
-    selected = null;
+    highlight = -1;
+    openDropdown();
     if (activeTab === "people") runPeopleSearch(query);
     else if (activeTab === "agents") runAgentSearch(query);
     // groups filter locally via the derived list — no request needed.
   }
 
-  function selectActor(actor: Actor) {
-    // If this principal already has a grant, focus its row instead of adding.
-    const existing = existingActorGrant(share?.grants ?? [], actor.id);
-    if (existing) {
-      flashExisting(existing);
-      return;
-    }
-    selected = { kind: "actor", actor };
+  function openDropdown() {
+    dropdownOpen = true;
   }
 
-  function selectGroup(group: Group) {
-    const existing = existingGroupGrant(share?.grants ?? [], group.id);
+  function onSearchFocus() {
+    // Re-open on focus so a dismissed dropdown comes back without retyping.
+    openDropdown();
+    // Groups list locally; (re)load if we haven't yet.
+    if (activeTab === "groups" && groupList.length === 0 && !searching) {
+      void loadGroups();
+    }
+  }
+
+  /** Pick an option pill: add it (or flash an existing row for a dup grant). */
+  function pickOption(pill: Pill) {
+    const existing = blockingGrant(share?.grants ?? [], pill);
     if (existing) {
       flashExisting(existing);
       return;
     }
-    selected = { kind: "group", group };
+    pills = addPill(pills, pill);
+    pickerError = null;
+    // Clear the query so the next search starts fresh; keep the box focused so
+    // the user can keep adding without re-clicking.
+    query = "";
+    highlight = -1;
+    peopleResults = [];
+    agentResults = [];
+    runPeopleSearch.cancel();
+    runAgentSearch.cancel();
+    searchEl?.focus();
+    // People/Agents have nothing to show until the next keystroke; groups keep
+    // their (now-shorter) filtered list visible.
+    if (activeTab !== "groups") dropdownOpen = false;
+  }
+
+  function removePillAt(pill: Pill) {
+    pills = removePill(pills, pill);
   }
 
   function flashExisting(grant: Grant) {
-    selected = null;
     const key = principalKey(grant);
     focusKey = key;
     pickerError = `${rowLabel(grant)} already has access.`;
@@ -462,53 +530,123 @@
     return value.replace(/["\\]/g, "\\$&");
   }
 
-  function selectedPrincipal(): Principal | null {
-    if (!selected) return null;
-    return selected.kind === "actor"
-      ? { actor_id: selected.actor.id }
-      : { group_id: selected.group.id };
+  /** Keyboard support on the search box: arrow-key highlight + Enter picks,
+   * Escape dismisses the dropdown. */
+  function onSearchKeydown(event: KeyboardEvent) {
+    if (event.key === "Escape") {
+      if (dropdownOpen) {
+        event.preventDefault();
+        dropdownOpen = false;
+        highlight = -1;
+      }
+      return;
+    }
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      openDropdown();
+      if (optionPills.length > 0) {
+        highlight = (highlight + 1) % optionPills.length;
+      }
+      return;
+    }
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      openDropdown();
+      if (optionPills.length > 0) {
+        highlight =
+          highlight <= 0 ? optionPills.length - 1 : highlight - 1;
+      }
+      return;
+    }
+    if (event.key === "Enter") {
+      if (optionPills.length === 0) return;
+      event.preventDefault();
+      // Enter picks the highlighted option, or the first when none highlighted.
+      const idx = highlight >= 0 ? highlight : 0;
+      const pill = optionPills[idx];
+      if (pill) pickOption(pill);
+    }
   }
 
-  function selectedLabel(): string {
-    if (!selected) return "";
-    return selected.kind === "actor"
-      ? actorLabel(selected.actor)
-      : selected.group.name;
-  }
+  // Dismiss the overlay on a click or focus that lands outside the add-box.
+  $effect(() => {
+    if (!showDropdown) return;
+    const onOutside = (event: Event) => {
+      const target = event.target as Node | null;
+      if (addBoxEl && target && !addBoxEl.contains(target)) {
+        dropdownOpen = false;
+        highlight = -1;
+      }
+    };
+    document.addEventListener("pointerdown", onOutside, true);
+    document.addEventListener("focusin", onOutside, true);
+    return () => {
+      document.removeEventListener("pointerdown", onOutside, true);
+      document.removeEventListener("focusin", onOutside, true);
+    };
+  });
 
   async function onShare() {
     if (!share || !resourceType || !parent) return;
-    const principal = selectedPrincipal();
-    if (!principal || !pickerRole) return;
+    if (pills.length === 0 || !pickerRole) return;
     granting = true;
     pickerError = null;
     actionError = null;
-    const request: GrantRequest = { ...principal, role: pickerRole };
-    try {
-      const grant = await api.grant(resourceType, parent, child ?? null, request);
-      // Insert the new row (or replace any stale row for the same principal).
-      if (share) {
-        const without = share.grants.filter(
-          (g) => !(g.principal === grant.principal && g.id === grant.id),
+    const role = pickerRole;
+    const requests = batchGrantRequests(pills, role);
+    const failed: { label: string; message: string }[] = [];
+    const granted: Grant[] = [];
+    // Grant each pill in turn (reuse ShareApi.grant per pill); collect the
+    // results so we can reconcile the list and report any failures.
+    for (let i = 0; i < requests.length; i++) {
+      const pill = pills[i]!;
+      try {
+        const grant = await api.grant(
+          resourceType,
+          parent,
+          child ?? null,
+          requests[i]!,
         );
-        share.grants = [...without, grant];
+        granted.push(grant);
+        dispatch("share-granted", {
+          principal: grant.principal,
+          id: grant.id,
+          role: grant.role,
+        });
+      } catch (err) {
+        failed.push({
+          label: pill.label,
+          message: errorMessage(err, "couldn't share"),
+        });
       }
-      dispatch("share-granted", {
-        principal: grant.principal,
-        id: grant.id,
-        role: grant.role,
-      });
+    }
+    // Merge granted rows (replacing any stale row for the same principal).
+    if (granted.length > 0 && share) {
+      const keys = new Set(
+        granted.map((g) => `${g.principal}:${g.id}`),
+      );
+      const without = share.grants.filter(
+        (g) => !keys.has(`${g.principal}:${g.id}`),
+      );
+      share.grants = [...without, ...granted];
       dispatch("share-changed", {});
-      // Reset the add-box for the next add.
-      selected = null;
+    }
+    // Drop the successfully-granted pills; keep any that failed so the user can
+    // retry. Reset the box when everything succeeded.
+    if (failed.length === 0) {
+      pills = [];
       query = "";
       peopleResults = [];
       agentResults = [];
-    } catch (err) {
-      pickerError = errorMessage(err, "Couldn't share");
-    } finally {
-      granting = false;
+      dropdownOpen = false;
+    } else {
+      const grantedKeys = new Set(granted.map((g) => `${g.principal}:${g.id}`));
+      pills = pills.filter((p) => !grantedKeys.has(pillKey(p)));
+      pickerError = failed
+        .map((f) => `${f.label}: ${f.message}`)
+        .join("; ");
     }
+    granting = false;
   }
 
   function pickerEmptyMessage(): string {
@@ -644,6 +782,7 @@
       <section
         class="datasette-share-dialog__add"
         aria-label="Add people, agents or groups"
+        bind:this={addBoxEl}
       >
         {#if pickerTabs.length > 1}
           <div
@@ -673,22 +812,91 @@
         {/if}
 
         <div class="datasette-share-dialog__add-row">
-          <input
-            type="search"
-            class="datasette-share-dialog__search"
-            placeholder={activeTab === "groups"
-              ? "Filter groups…"
-              : activeTab === "agents"
-                ? "Search agents…"
-                : "Search people…"}
-            aria-label={activeTab === "groups"
-              ? "Filter groups"
-              : activeTab === "agents"
-                ? "Search agents"
-                : "Search people"}
-            value={query}
-            oninput={onQueryInput}
-          />
+          <!-- The search field + floating results overlay share a relatively
+               positioned wrapper, so the listbox can be absolutely positioned
+               beneath the input without reflowing the rest of the dialog. -->
+          <div class="datasette-share-dialog__search-wrap">
+            <input
+              type="search"
+              bind:this={searchEl}
+              class="datasette-share-dialog__search"
+              placeholder={activeTab === "groups"
+                ? "Filter groups…"
+                : activeTab === "agents"
+                  ? "Search agents…"
+                  : "Search people…"}
+              aria-label={activeTab === "groups"
+                ? "Filter groups"
+                : activeTab === "agents"
+                  ? "Search agents"
+                  : "Search people"}
+              role="combobox"
+              aria-expanded={showDropdown}
+              aria-controls="datasette-share-results"
+              aria-autocomplete="list"
+              aria-activedescendant={highlight >= 0
+                ? `datasette-share-opt-${highlight}`
+                : undefined}
+              value={query}
+              oninput={onQueryInput}
+              onfocus={onSearchFocus}
+              onkeydown={onSearchKeydown}
+            />
+
+            {#if showDropdown}
+              <ul
+                id="datasette-share-results"
+                class="datasette-share-dialog__results"
+                role="listbox"
+                aria-label="Search results"
+                aria-busy={searching}
+              >
+                {#each optionPills as opt, i (pillKey(opt))}
+                  <li>
+                    <button
+                      type="button"
+                      role="option"
+                      id={`datasette-share-opt-${i}`}
+                      aria-selected={highlight === i}
+                      class="datasette-share-dialog__result"
+                      class:is-highlighted={highlight === i}
+                      onmousemove={() => (highlight = i)}
+                      onclick={() => pickOption(opt)}
+                    >
+                      <span
+                        class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
+                        style:background-color={avatarColor(opt.id)}
+                        aria-hidden="true"
+                        >{opt.kind === "group"
+                          ? "👥"
+                          : initials(opt.label)}</span
+                      >
+                      <span class="datasette-share-dialog__result-text">
+                        <span class="datasette-share-dialog__name"
+                          >{opt.label}{#if opt.kind === "agent"}
+                            <span aria-hidden="true">🤖</span>{/if}</span
+                        >
+                        {#if opt.kind === "user" && opt.email}
+                          <span class="datasette-share-dialog__sub"
+                            >{opt.email}</span
+                          >
+                        {:else if opt.kind === "group" && opt.member_count != null}
+                          <span class="datasette-share-dialog__sub"
+                            >{memberCountLabel(opt.member_count)}</span
+                          >
+                        {/if}
+                      </span>
+                    </button>
+                  </li>
+                {:else}
+                  <li class="datasette-share-dialog__empty">
+                    {pickerEmptyMessage()}
+                  </li>
+                {/each}
+              </ul>
+            {/if}
+          </div>
+
           <select
             class="datasette-share-dialog__role-select"
             aria-label="Role for new share"
@@ -702,118 +910,42 @@
           <button
             type="button"
             class="datasette-share-dialog__share-btn"
-            disabled={selected == null || granting || !pickerRole}
+            disabled={pills.length === 0 || granting || !pickerRole}
             onclick={onShare}
           >
             {granting ? "Sharing…" : "Share"}
           </button>
         </div>
 
-        {#if selected}
-          <p class="datasette-share-dialog__selected" aria-live="polite">
-            Selected: <strong>{selectedLabel()}</strong>
-            <button
-              type="button"
-              class="datasette-share-dialog__clear-selected"
-              aria-label="Clear selection"
-              onclick={() => (selected = null)}>×</button
-            >
-          </p>
+        {#if pills.length > 0}
+          <ul class="datasette-share-dialog__pills" aria-label="Selected to share">
+            {#each pills as pill (pillKey(pill))}
+              <li class="datasette-share-dialog__pill">
+                <span
+                  class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__pill-avatar"
+                  style:background-color={avatarColor(pill.id)}
+                  aria-hidden="true"
+                  >{pill.kind === "group" ? "👥" : initials(pill.label)}</span
+                >
+                <span class="datasette-share-dialog__pill-label"
+                  >{pill.label}{#if pill.kind === "agent"}
+                    <span aria-hidden="true">🤖</span>{/if}</span
+                >
+                <button
+                  type="button"
+                  class="datasette-share-dialog__pill-remove"
+                  aria-label={`Remove ${pill.label}`}
+                  disabled={granting}
+                  onclick={() => removePillAt(pill)}>×</button
+                >
+              </li>
+            {/each}
+          </ul>
         {/if}
 
         {#if pickerError}
           <p class="datasette-share-dialog__error" role="alert">{pickerError}</p>
         {/if}
-
-        <ul
-          id="datasette-share-results"
-          class="datasette-share-dialog__results"
-          role="listbox"
-          aria-label="Search results"
-          aria-busy={searching}
-        >
-          {#if activeTab === "people"}
-            {#each peopleOptions as actor (actor.id)}
-              <li>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selected?.kind === "actor" &&
-                    selected.actor.id === actor.id}
-                  class="datasette-share-dialog__result"
-                  onclick={() => selectActor(actor)}
-                >
-                  <span
-                    class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
-                    style:background-color={avatarColor(actor.id)}
-                    aria-hidden="true">{initials(actor.display_name || actor.id)}</span
-                  >
-                  <span class="datasette-share-dialog__result-text">
-                    <span class="datasette-share-dialog__name">{actorLabel(actor)}</span>
-                    {#if actor.email}
-                      <span class="datasette-share-dialog__sub">{actor.email}</span>
-                    {/if}
-                  </span>
-                </button>
-              </li>
-            {:else}
-              <li class="datasette-share-dialog__empty">{pickerEmptyMessage()}</li>
-            {/each}
-          {:else if activeTab === "agents"}
-            {#each agentOptions as agent (agent.id)}
-              <li>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selected?.kind === "actor" &&
-                    selected.actor.id === agent.id}
-                  class="datasette-share-dialog__result"
-                  onclick={() => selectActor(agent)}
-                >
-                  <span
-                    class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
-                    style:background-color={avatarColor(agent.id)}
-                    aria-hidden="true">{initials(agentLabel(agent))}</span
-                  >
-                  <span class="datasette-share-dialog__result-text">
-                    <span class="datasette-share-dialog__name"
-                      >{agentLabel(agent)} <span aria-hidden="true">🤖</span></span
-                    >
-                  </span>
-                </button>
-              </li>
-            {:else}
-              <li class="datasette-share-dialog__empty">{pickerEmptyMessage()}</li>
-            {/each}
-          {:else if activeTab === "groups"}
-            {#each groupOptions as group (groupIdStr(group.id))}
-              <li>
-                <button
-                  type="button"
-                  role="option"
-                  aria-selected={selected?.kind === "group" &&
-                    groupIdStr(selected.group.id) === groupIdStr(group.id)}
-                  class="datasette-share-dialog__result"
-                  onclick={() => selectGroup(group)}
-                >
-                  <span
-                    class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
-                    style:background-color={avatarColor(groupIdStr(group.id))}
-                    aria-hidden="true">👥</span
-                  >
-                  <span class="datasette-share-dialog__result-text">
-                    <span class="datasette-share-dialog__name">{group.name}</span>
-                    <span class="datasette-share-dialog__sub"
-                      >{memberCountLabel(group.member_count)}</span
-                    >
-                  </span>
-                </button>
-              </li>
-            {:else}
-              <li class="datasette-share-dialog__empty">{pickerEmptyMessage()}</li>
-            {/each}
-          {/if}
-        </ul>
       </section>
     {/if}
 
@@ -1187,9 +1319,16 @@
     gap: 0.375rem;
     align-items: center;
   }
-  .datasette-share-dialog__search {
+  /* Anchor for the floating results overlay. */
+  .datasette-share-dialog__search-wrap {
+    position: relative;
     flex: 1 1 auto;
     min-width: 0;
+  }
+  .datasette-share-dialog__search {
+    width: 100%;
+    min-width: 0;
+    box-sizing: border-box;
     font-size: 0.875rem;
     padding: 0.375rem 0.5rem;
     border: 1px solid #d0d7de;
@@ -1209,28 +1348,83 @@
     opacity: 0.5;
     cursor: default;
   }
-  .datasette-share-dialog__selected {
-    margin: 0.375rem 0 0;
-    font-size: 0.8125rem;
-    color: #57606a;
+  /* --- selected pills ---------------------------------------------------- */
+  .datasette-share-dialog__pills {
+    list-style: none;
     display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    margin: 0.5rem 0 0;
+    padding: 0;
+  }
+  .datasette-share-dialog__pill {
+    display: inline-flex;
     align-items: center;
     gap: 0.375rem;
+    max-width: 100%;
+    padding: 0.1875rem 0.1875rem 0.1875rem 0.1875rem;
+    background: #eef1f4;
+    border: 1px solid #d0d7de;
+    border-radius: 999px;
+    font-size: 0.8125rem;
   }
-  .datasette-share-dialog__clear-selected {
-    border: none;
+  .datasette-share-dialog__pill-avatar {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    flex: 0 0 auto;
+    width: 1.5rem;
+    height: 1.5rem;
+    font-size: 0.625rem;
+  }
+  .datasette-share-dialog__pill-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .datasette-share-dialog__pill-remove {
+    flex: 0 0 auto;
+    font-size: 0.875rem;
+    line-height: 1;
+    width: 1.25rem;
+    height: 1.25rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
+    border: none;
+    border-radius: 50%;
     cursor: pointer;
     color: #57606a;
-    font-size: 1rem;
-    line-height: 1;
   }
+  .datasette-share-dialog__pill-remove:hover:not(:disabled) {
+    background: #ffebe9;
+    color: #a0202a;
+  }
+  .datasette-share-dialog__pill-remove:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+
+  /* --- floating results overlay ------------------------------------------ */
+  /* The results render as an absolutely-positioned autocomplete dropdown that
+     floats over the rest of the dialog, so adding results never reflows the
+     People-with-access / General-access sections below. */
   .datasette-share-dialog__results {
     list-style: none;
-    margin: 0.375rem 0 0;
-    padding: 0;
-    max-height: 12rem;
+    margin: 0;
+    padding: 0.25rem;
+    position: absolute;
+    top: calc(100% + 0.25rem);
+    left: 0;
+    right: 0;
+    z-index: 50;
+    max-height: 14rem;
     overflow-y: auto;
+    background: #fff;
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(31, 35, 40, 0.18);
   }
   .datasette-share-dialog__result {
     display: flex;
@@ -1247,6 +1441,7 @@
   }
   .datasette-share-dialog__result:hover,
   .datasette-share-dialog__result:focus-visible,
+  .datasette-share-dialog__result.is-highlighted,
   .datasette-share-dialog__result[aria-selected="true"] {
     background: #eef3fb;
     outline: none;
