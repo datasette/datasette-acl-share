@@ -3,6 +3,7 @@ __pycache__/
 *$py.class
 .venv/
 venv
+uv.lock
 *.egg-info/
 .eggs
 .pytest_cache
