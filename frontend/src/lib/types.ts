@@ -57,6 +57,13 @@ export interface Grant {
   avatar_url?: string;
   /** Group grants only: number of members. */
   member_count?: number;
+  /**
+   * Set by the acl API when this principal owns the resource. The current acl
+   * branch infers ownership from the role name instead of emitting this flag,
+   * so the dialog treats `role === "Owner"` as owner too (see
+   * {@link isOwnerGrant}); kept here for forward-compat.
+   */
+  is_owner?: boolean;
 }
 
 /**

@@ -1,11 +1,38 @@
 import { defineConfig } from "vitest/config";
+import { svelte } from "@sveltejs/vite-plugin-svelte";
 
-// Unit tests for the framework-agnostic API client (src/lib/*.ts). The client
-// is plain TypeScript with an injectable fetch, so the default node-ish
-// environment is sufficient — no jsdom needed.
+// Two test projects:
+//   node     — fast unit tests for the framework-agnostic helpers (the API
+//              client + pure grant/avatar helpers). Injectable fetch, no DOM.
+//   browser  — component tests for <datasette-share-dialog>, run in a real
+//              browser (Playwright/chromium) via vitest-browser-svelte so
+//              custom-element registration, DOM events and avatar <img>
+//              onerror fallbacks behave exactly as in production.
 export default defineConfig({
   test: {
-    include: ["src/**/*.test.ts"],
-    environment: "node",
+    projects: [
+      {
+        extends: true,
+        test: {
+          name: "node",
+          include: ["src/lib/**/*.test.ts"],
+          environment: "node",
+        },
+      },
+      {
+        // The browser project needs the Svelte plugin to compile components.
+        plugins: [svelte()],
+        test: {
+          name: "browser",
+          include: ["src/**/*.svelte.test.ts"],
+          browser: {
+            enabled: true,
+            headless: true,
+            provider: "playwright",
+            instances: [{ browser: "chromium" }],
+          },
+        },
+      },
+    ],
   },
 });
