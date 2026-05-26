@@ -207,6 +207,63 @@ describe("ShareApi pickers", () => {
   });
 });
 
+describe("ShareApi pickers carry the resource for per-resource authz", () => {
+  it("listGroups appends resource_type/parent/child", async () => {
+    const fetchMock = jsonFetch({ groups: [] });
+    const api = new ShareApi({
+      resource: { resourceType: "paper-doc", parent: "_paper", child: "42" },
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await api.listGroups();
+    expect(lastCall(fetchMock)[0]).toBe(
+      "/-/acl/api/groups?resource_type=paper-doc&parent=_paper&child=42",
+    );
+  });
+
+  it("searchPeople appends the resource alongside q", async () => {
+    const fetchMock = jsonFetch({ results: [] });
+    const api = new ShareApi({
+      resource: { resourceType: "paper-doc", parent: "_paper", child: "42" },
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await api.searchPeople("lois");
+    expect(lastCall(fetchMock)[0]).toBe(
+      "/-/profiles/api/search?q=lois&resource_type=paper-doc&parent=_paper&child=42",
+    );
+  });
+
+  it("listAgents appends the resource alongside q", async () => {
+    const fetchMock = jsonFetch({ results: [] });
+    const api = new ShareApi({
+      resource: { resourceType: "paper-doc", parent: "_paper", child: "42" },
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await api.listAgents("bot");
+    expect(lastCall(fetchMock)[0]).toBe(
+      "/-/agent/api/identities?q=bot&resource_type=paper-doc&parent=_paper&child=42",
+    );
+  });
+
+  it("omits an empty child segment from picker params", async () => {
+    const fetchMock = jsonFetch({ groups: [] });
+    const api = new ShareApi({
+      resource: { resourceType: "paper-doc", parent: "_paper", child: null },
+      fetch: fetchMock as unknown as typeof fetch,
+    });
+    await api.listGroups();
+    expect(lastCall(fetchMock)[0]).toBe(
+      "/-/acl/api/groups?resource_type=paper-doc&parent=_paper",
+    );
+  });
+
+  it("omits resource params entirely when no resource is supplied", async () => {
+    const fetchMock = jsonFetch({ groups: [] });
+    const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
+    await api.listGroups();
+    expect(lastCall(fetchMock)[0]).toBe("/-/acl/api/groups");
+  });
+});
+
 describe("error handling", () => {
   it("non-2xx surfaces a ShareApiError carrying status + server message", async () => {
     const fetchMock = jsonFetch({ ok: false, error: "Cannot manage sharing for this resource" }, 403);

@@ -82,6 +82,13 @@
     new ShareApi({
       aclBase: apiBase || undefined,
       csrftoken: csrftoken || undefined,
+      // Thread the dialog's resource onto picker calls so the acl picker
+      // endpoints can authorize a per-resource Manager (a doc owner with no
+      // global `datasette-acl` admin) instead of rejecting them.
+      resource:
+        resourceType && parent
+          ? { resourceType, parent, child: child ?? null }
+          : undefined,
     }),
   );
 

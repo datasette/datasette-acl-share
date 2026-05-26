@@ -31,6 +31,17 @@ export const DEFAULT_ACL_BASE = "/-/acl/api";
 export const DEFAULT_PROFILES_BASE = "/-/profiles/api";
 export const DEFAULT_AGENT_BASE = "/-/agent/api";
 
+/**
+ * The resource the dialog is sharing. Threaded into the picker calls so the
+ * acl picker endpoints can authorize a per-resource Manager (a doc owner who
+ * holds no global `datasette-acl` admin) rather than rejecting them.
+ */
+export interface ShareResource {
+  resourceType: string;
+  parent: string;
+  child?: string | null;
+}
+
 export interface ShareApiOptions {
   /** acl API prefix (default `/-/acl/api`). */
   aclBase?: string;
@@ -40,6 +51,8 @@ export interface ShareApiOptions {
   agentBase?: string;
   /** CSRF token to forward on writes (optional under 1.0a30). */
   csrftoken?: string;
+  /** The dialog's resource, threaded onto picker calls for per-resource authz. */
+  resource?: ShareResource;
   /** Injectable fetch (for tests). Defaults to global `fetch`. */
   fetch?: typeof fetch;
 }
@@ -91,6 +104,7 @@ export class ShareApi {
   private readonly profilesBase: string;
   private readonly agentBase: string;
   private readonly csrftoken?: string;
+  private readonly resource?: ShareResource;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: ShareApiOptions = {}) {
@@ -98,9 +112,22 @@ export class ShareApi {
     this.profilesBase = options.profilesBase || DEFAULT_PROFILES_BASE;
     this.agentBase = options.agentBase || DEFAULT_AGENT_BASE;
     this.csrftoken = options.csrftoken;
+    this.resource = options.resource;
     // Bind so callers passing `globalThis.fetch` keep the right `this`.
     const f = options.fetch || globalThis.fetch;
     this.fetchImpl = f.bind(globalThis);
+  }
+
+  /** The dialog's resource as query params, for per-resource picker authz.
+   * Empty when no resource was supplied (back-compat: global-admin gate). */
+  private resourceParams(): Record<string, string | undefined> {
+    const r = this.resource;
+    if (!r || !r.resourceType || !r.parent) return {};
+    return {
+      resource_type: r.resourceType,
+      parent: r.parent,
+      child: r.child != null && r.child !== "" ? r.child : undefined,
+    };
   }
 
   // --- low-level transport -------------------------------------------------
@@ -245,23 +272,35 @@ export class ShareApi {
 
   // --- pickers -------------------------------------------------------------
 
-  /** GET /-/profiles/api/search?q= → people picker (avatars/display names). */
+  /** GET /-/profiles/api/search?q= → people picker (avatars/display names).
+   * Carries the dialog's resource so a fallback through the acl actors picker
+   * (`/-/acl/api/actors`) authorizes per-resource Managers. */
   async searchPeople(q: string): Promise<Actor[]> {
-    const url = withQuery(joinPath(this.profilesBase, "search"), { q });
+    const url = withQuery(joinPath(this.profilesBase, "search"), {
+      q,
+      ...this.resourceParams(),
+    });
     const res = await this.getJson<{ results: Actor[] }>(url);
     return res.results ?? [];
   }
 
   /** GET /-/agent/api/identities?q= → agent picker (phase-07; may 404). */
   async listAgents(q: string): Promise<Actor[]> {
-    const url = withQuery(joinPath(this.agentBase, "identities"), { q });
+    const url = withQuery(joinPath(this.agentBase, "identities"), {
+      q,
+      ...this.resourceParams(),
+    });
     const res = await this.getJson<{ results: Actor[] }>(url);
     return res.results ?? [];
   }
 
-  /** GET /-/acl/api/groups → the group picker. */
+  /** GET /-/acl/api/groups → the group picker. Carries the dialog's resource
+   * so per-resource Managers (no global admin) are authorized. */
   async listGroups(): Promise<Group[]> {
-    const url = joinPath(this.aclBase, "groups");
+    const url = withQuery(
+      joinPath(this.aclBase, "groups"),
+      this.resourceParams(),
+    );
     const res = await this.getJson<{ groups: Group[] }>(url);
     return res.groups ?? [];
   }
