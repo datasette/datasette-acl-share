@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { isOwnerGrant, orderGrants, selectableRoles } from "./grants";
+import {
+  currentWildcardGrant,
+  defaultPickerRole,
+  GENERAL_ACCESS_PRINCIPALS,
+  generalAccessRoles,
+  isOwnerGrant,
+  isWildcardGrant,
+  orderGrants,
+  selectableRoles,
+} from "./grants";
 import type { Grant, Role } from "./types";
 
 function grant(partial: Partial<Grant> & Pick<Grant, "id">): Grant {
@@ -60,5 +69,51 @@ describe("orderGrants", () => {
       "zeditor",
       "viewer",
     ]);
+  });
+});
+
+describe("general-access helpers", () => {
+  it("offers BOTH wildcard principals (* and _signed_in)", () => {
+    expect(GENERAL_ACCESS_PRINCIPALS).toEqual(["*", "_signed_in"]);
+  });
+
+  it("isWildcardGrant matches public kind and wildcard ids", () => {
+    expect(isWildcardGrant(grant({ id: "*", kind: "public" }))).toBe(true);
+    expect(isWildcardGrant(grant({ id: "_signed_in", kind: "public" }))).toBe(true);
+    // Even if kind wasn't enriched, the id is recognised.
+    expect(isWildcardGrant(grant({ id: "*", kind: "user" }))).toBe(true);
+    expect(isWildcardGrant(grant({ id: "alice", kind: "user" }))).toBe(false);
+  });
+
+  it("currentWildcardGrant returns the public grant or null", () => {
+    const grants: Grant[] = [
+      grant({ id: "alice", role: "Editor", kind: "user" }),
+      grant({ id: "_signed_in", role: "Viewer", kind: "public" }),
+    ];
+    expect(currentWildcardGrant(grants)?.id).toBe("_signed_in");
+    expect(currentWildcardGrant([grant({ id: "bob", kind: "user" })])).toBeNull();
+  });
+
+  it("generalAccessRoles excludes manage roles and Owner", () => {
+    expect(generalAccessRoles(ROLES).map((r) => r.name)).toEqual([
+      "Viewer",
+      "Editor",
+    ]);
+  });
+});
+
+describe("defaultPickerRole", () => {
+  it("prefers the lowest-rank write role (Editor)", () => {
+    expect(defaultPickerRole(ROLES)).toBe("Editor");
+  });
+  it("falls back to the lowest selectable role when no write role", () => {
+    const readOnly: Role[] = [
+      { name: "Viewer", actions: ["read"], rank: 10 },
+      { name: "Lister", actions: ["list"], rank: 5 },
+    ];
+    expect(defaultPickerRole(readOnly)).toBe("Lister");
+  });
+  it("returns null when there are no selectable roles", () => {
+    expect(defaultPickerRole([{ name: "Owner", actions: ["*"], rank: 1 }])).toBeNull();
   });
 });

@@ -101,7 +101,12 @@ function mount(
   const el = document.createElement("datasette-share-dialog");
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
   const events: Record<string, CustomEvent[]> = {};
-  for (const type of ["share-updated", "share-revoked", "share-changed"]) {
+  for (const type of [
+    "share-granted",
+    "share-updated",
+    "share-revoked",
+    "share-changed",
+  ]) {
     events[type] = [];
     el.addEventListener(type, (e) => events[type]!.push(e as CustomEvent));
   }
@@ -244,5 +249,232 @@ describe("<datasette-share-dialog> people-with-access list", () => {
     on("/resource/", () => json({ error: "Cannot manage" }, 403));
     mount(BASE_ATTRS);
     await expect.element(page.getByText("Cannot manage")).toBeInTheDocument();
+  });
+});
+
+// --- add-box pickers -------------------------------------------------------
+
+describe("<datasette-share-dialog> add-box pickers", () => {
+  it("typing in People calls searchPeople (debounced) and renders results", async () => {
+    on("/profiles/api/search", () => {
+      // carol matches the query
+      return json({
+        results: [
+          {
+            id: "carol",
+            display_name: "Carol Smith",
+            email: "carol@x.com",
+            kind: "user",
+          },
+        ],
+      });
+    });
+    on("/resource/", () => json(STATE));
+
+    mount(BASE_ATTRS);
+    const input = page.getByRole("searchbox", { name: "Search people" });
+    await expect.element(input).toBeInTheDocument();
+    await input.fill("car");
+
+    await vi.waitFor(() => {
+      const search = calls.find((c) => c.url.includes("/profiles/api/search"));
+      expect(search).toBeTruthy();
+      expect(search!.url).toContain("q=car");
+    });
+    await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
+  });
+
+  it("selecting a person + Share calls grant and emits share-granted", async () => {
+    on("/profiles/api/search", () =>
+      json({ results: [{ id: "carol", display_name: "Carol Smith", kind: "user" }] }),
+    );
+    on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
+      const req = JSON.parse(init.body as string);
+      return json({
+        ok: true,
+        grant: {
+          principal: "actor",
+          id: req.actor_id,
+          role: req.role,
+          actions: ["read", "write"],
+          kind: "user",
+          display_name: "Carol Smith",
+        },
+      });
+    });
+    on("/resource/", () => json(STATE));
+
+    const { events } = mount(BASE_ATTRS);
+    const input = page.getByRole("searchbox", { name: "Search people" });
+    await expect.element(input).toBeInTheDocument();
+    await input.fill("car");
+    await page.getByRole("option", { name: /Carol Smith/ }).click();
+
+    const shareBtn = page.getByRole("button", { name: "Share", exact: true });
+    await shareBtn.click();
+
+    await vi.waitFor(() => {
+      const g = calls.find((c) => c.url.endsWith("/grant"));
+      expect(g).toBeTruthy();
+      expect(g!.method).toBe("POST");
+      expect(g!.body).toMatchObject({ actor_id: "carol", role: "Editor" });
+    });
+    await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(1));
+    expect(events["share-granted"]![0]!.detail).toMatchObject({
+      principal: "actor",
+      id: "carol",
+      role: "Editor",
+    });
+  });
+
+  it("adding a person who already has a grant focuses the existing row", async () => {
+    // Search returns bob, who is already granted in STATE.
+    on("/profiles/api/search", () =>
+      json({ results: [{ id: "bob", display_name: "Bob Editor", kind: "user" }] }),
+    );
+    on("/resource/", () => json(STATE));
+
+    mount(BASE_ATTRS);
+    const input = page.getByRole("searchbox", { name: "Search people" });
+    await expect.element(input).toBeInTheDocument();
+    await input.fill("bob");
+    // The result for bob should be filtered out (already granted).
+    await vi.waitFor(() => {
+      const opts = document.querySelectorAll(
+        "#datasette-share-results [role='option']",
+      );
+      expect(opts.length).toBe(0);
+    });
+    // No grant call was issued.
+    expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
+  });
+
+  it("hides the Agents tab when the agents capability is absent", async () => {
+    on("/resource/", () => json(STATE));
+    mount({ ...BASE_ATTRS, features: "people,groups,public" });
+    await expect
+      .element(page.getByRole("tab", { name: "People" }))
+      .toBeInTheDocument();
+    expect(
+      document.querySelector("[role='tab'][id='datasette-share-tab-agents']"),
+    ).toBeNull();
+  });
+
+  it("shows the Agents tab when the agents capability is present", async () => {
+    on("/resource/", () => json(STATE));
+    mount({ ...BASE_ATTRS, features: "people,agents,groups,public" });
+    await expect
+      .element(page.getByRole("tab", { name: "Agents" }))
+      .toBeInTheDocument();
+  });
+});
+
+// --- general access --------------------------------------------------------
+
+describe("<datasette-share-dialog> general access", () => {
+  it("choosing 'Anyone signed in' then a role issues a _signed_in grant", async () => {
+    on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
+      const req = JSON.parse(init.body as string);
+      return json({
+        ok: true,
+        grant: {
+          principal: "actor",
+          id: req.actor_id,
+          role: req.role,
+          actions: ["read", "write"],
+          kind: "public",
+        },
+      });
+    });
+    on("/resource/", () => json(STATE));
+
+    const { events } = mount(BASE_ATTRS);
+    const principal = page.getByRole("combobox", { name: "General access", exact: true });
+    await expect.element(principal).toBeInTheDocument();
+    await principal.selectOptions("Anyone signed in");
+
+    await vi.waitFor(() => {
+      const g = calls.find((c) => c.url.endsWith("/grant"));
+      expect(g).toBeTruthy();
+      expect(g!.body).toMatchObject({ actor_id: "_signed_in", role: "Editor" });
+    });
+    await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(1));
+  });
+
+  it("offers BOTH 'Anyone' (*) and 'Anyone signed in' (_signed_in) options", async () => {
+    on("/resource/", () => json(STATE));
+    mount(BASE_ATTRS);
+    const principal = page.getByRole("combobox", { name: "General access", exact: true });
+    await expect.element(principal).toBeInTheDocument();
+    const sel = principal.element() as HTMLSelectElement;
+    const values = Array.from(sel.options).map((o) => o.value);
+    expect(values).toContain("*");
+    expect(values).toContain("_signed_in");
+    expect(values).toContain(""); // Restricted
+  });
+
+  it("an existing wildcard grant pre-selects the control", async () => {
+    on("/resource/", () =>
+      json({
+        ...STATE,
+        grants: [
+          ...STATE.grants,
+          {
+            principal: "actor",
+            id: "*",
+            role: "Viewer",
+            actions: ["read"],
+            kind: "public",
+          },
+        ],
+      }),
+    );
+    mount(BASE_ATTRS);
+    const principal = page.getByRole("combobox", { name: "General access", exact: true });
+    await expect.element(principal).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect((principal.element() as HTMLSelectElement).value).toBe("*"),
+    );
+    const role = page.getByRole("combobox", { name: "General access role" });
+    await vi.waitFor(() =>
+      expect((role.element() as HTMLSelectElement).value).toBe("Viewer"),
+    );
+    // Wildcard grant is NOT rendered in the people-with-access list.
+    expect(document.querySelectorAll("[data-principal-key='actor:*']").length).toBe(0);
+  });
+
+  it("switching to Restricted revokes the wildcard grant", async () => {
+    on("/resource/paper-doc/mydb/42/revoke", () => json({ ok: true, removed: 1 }));
+    on("/resource/", () =>
+      json({
+        ...STATE,
+        grants: [
+          ...STATE.grants,
+          {
+            principal: "actor",
+            id: "_signed_in",
+            role: "Viewer",
+            actions: ["read"],
+            kind: "public",
+          },
+        ],
+      }),
+    );
+    const { events } = mount(BASE_ATTRS);
+    const principal = page.getByRole("combobox", { name: "General access", exact: true });
+    await expect.element(principal).toBeInTheDocument();
+    await vi.waitFor(() =>
+      expect((principal.element() as HTMLSelectElement).value).toBe("_signed_in"),
+    );
+    await principal.selectOptions("Restricted");
+
+    await vi.waitFor(() => {
+      const r = calls.find((c) => c.url.endsWith("/revoke"));
+      expect(r).toBeTruthy();
+      expect(r!.body).toMatchObject({ actor_id: "_signed_in" });
+    });
+    await vi.waitFor(() =>
+      expect(events["share-revoked"]!.length).toBeGreaterThan(0),
+    );
   });
 });

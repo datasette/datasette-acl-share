@@ -9,16 +9,39 @@
 />
 
 <script lang="ts">
-  import { ShareApi, ShareApiError } from "./lib/api";
+  import { ShareApi, ShareApiError, capabilitiesFromFeatures } from "./lib/api";
   import { avatarColor, initials, kindBadge } from "./lib/avatar";
-  import { isOwnerGrant, orderGrants, selectableRoles } from "./lib/grants";
+  import {
+    currentWildcardGrant,
+    defaultPickerRole,
+    generalAccessRoles,
+    isOwnerGrant,
+    orderGrants,
+    selectableRoles,
+  } from "./lib/grants";
+  import {
+    actorLabel,
+    debounce,
+    existingActorGrant,
+    filterAlreadyGranted,
+    SEARCH_DEBOUNCE_MS,
+  } from "./lib/people";
+  import { agentLabel, filterAgents, normalizeAgents } from "./lib/agents";
+  import {
+    existingGroupGrant,
+    filterGroups,
+    groupIdStr,
+    memberCountLabel,
+  } from "./lib/groups";
   import type {
     Actor,
     ActorKind,
     Grant,
     GrantRequest,
+    Group,
     Principal,
     ShareState,
+    WildcardPrincipal,
   } from "./lib/types";
 
   let {
@@ -29,6 +52,7 @@
     "actor-json": actorJson,
     csrftoken,
     "api-base": apiBase,
+    features,
   }: {
     "resource-type"?: string;
     parent?: string;
@@ -37,7 +61,12 @@
     "actor-json"?: string;
     csrftoken?: string;
     "api-base"?: string;
+    features?: string;
   } = $props();
+
+  /** Which optional sections to show. Derived from the host `features` attr
+   * (comma list); missing/empty enables everything available. */
+  let caps = $derived(capabilitiesFromFeatures(features));
 
   /** The current actor, parsed from the `actor-json` attribute (for "(you)"). */
   let currentActor = $derived.by<Actor | null>(() => {
@@ -238,12 +267,358 @@
   }
 
   // People-with-access ordering: owner first, then by descending role rank
-  // (most-privileged first), then by label, mirroring Google Docs.
+  // (most-privileged first), then by label, mirroring Google Docs. Wildcard
+  // (kind:"public") grants are excluded — they live in the General access
+  // section, not the per-person list.
   let orderedGrants = $derived.by<Grant[]>(() =>
-    share ? orderGrants(share.grants, share.roles, rowLabel) : [],
+    share
+      ? orderGrants(
+          share.grants.filter((g) => g.kind !== "public"),
+          share.roles,
+          rowLabel,
+        )
+      : [],
   );
 
   let dropdownRoles = $derived(selectableRoles(share?.roles ?? []));
+
+  // --- add-box picker ------------------------------------------------------
+
+  type PickerTab = "people" | "agents" | "groups";
+
+  // The tabs to show, in order, gated by capability. Agents is hidden when the
+  // agent backend is absent; groups when disabled by features.
+  let pickerTabs = $derived.by<PickerTab[]>(() => {
+    const tabs: PickerTab[] = [];
+    if (caps.people) tabs.push("people");
+    if (caps.agents) tabs.push("agents");
+    if (caps.groups) tabs.push("groups");
+    return tabs;
+  });
+
+  let activeTab = $state<PickerTab | null>(null);
+
+  // Keep the active tab valid as capabilities resolve.
+  $effect(() => {
+    if (pickerTabs.length === 0) {
+      activeTab = null;
+    } else if (activeTab == null || !pickerTabs.includes(activeTab)) {
+      activeTab = pickerTabs[0]!;
+    }
+  });
+
+  let query = $state("");
+  // Raw results for the current tab + query (before dedupe/filter).
+  let peopleResults = $state<Actor[]>([]);
+  let agentResults = $state<Actor[]>([]);
+  let groupList = $state<Group[]>([]); // groups are listed once, filtered locally
+  let searching = $state(false);
+  let pickerError = $state<string | null>(null);
+  // The principal selected from the result list, pending a Share click.
+  let selected = $state<
+    | { kind: "actor"; actor: Actor }
+    | { kind: "group"; group: Group }
+    | null
+  >(null);
+  let pickerRole = $state<string>("");
+  let granting = $state(false);
+  // Set to a principal key to flash/scroll its existing row when a duplicate
+  // add is attempted; the row reads this to apply a highlight.
+  let focusKey = $state<string | null>(null);
+
+  // Default the add-box role to the type's lowest write role (≈ Editor).
+  $effect(() => {
+    const def = defaultPickerRole(share?.roles ?? []);
+    if (def && (pickerRole === "" || !dropdownRoles.some((r) => r.name === pickerRole))) {
+      pickerRole = def;
+    }
+  });
+
+  // De-duped, ready-to-render result lists for the active tab.
+  let peopleOptions = $derived(
+    filterAlreadyGranted(peopleResults, share?.grants ?? []),
+  );
+  let agentOptions = $derived(
+    filterAgents(normalizeAgents(agentResults), share?.grants ?? []),
+  );
+  let groupOptions = $derived(
+    filterGroups(groupList, share?.grants ?? [], query),
+  );
+
+  // Debounced search runners (one per searchable tab). Re-created if `api`
+  // changes (e.g. api-base attr changes) so they close over the live client.
+  let runPeopleSearch = $derived(
+    debounce((q: string) => void doSearchPeople(q), SEARCH_DEBOUNCE_MS),
+  );
+  let runAgentSearch = $derived(
+    debounce((q: string) => void doSearchAgents(q), SEARCH_DEBOUNCE_MS),
+  );
+
+  async function doSearchPeople(q: string) {
+    searching = true;
+    pickerError = null;
+    try {
+      peopleResults = await api.searchPeople(q);
+    } catch (err) {
+      peopleResults = [];
+      pickerError = errorMessage(err, "Search failed");
+    } finally {
+      searching = false;
+    }
+  }
+
+  async function doSearchAgents(q: string) {
+    searching = true;
+    pickerError = null;
+    try {
+      agentResults = await api.listAgents(q);
+    } catch (err) {
+      agentResults = [];
+      pickerError = errorMessage(err, "Couldn't list agents");
+    } finally {
+      searching = false;
+    }
+  }
+
+  async function loadGroups() {
+    searching = true;
+    pickerError = null;
+    try {
+      groupList = await api.listGroups();
+    } catch (err) {
+      groupList = [];
+      pickerError = errorMessage(err, "Couldn't list groups");
+    } finally {
+      searching = false;
+    }
+  }
+
+  function selectTab(tab: PickerTab) {
+    if (activeTab === tab) return;
+    activeTab = tab;
+    query = "";
+    selected = null;
+    pickerError = null;
+    runPeopleSearch.cancel();
+    runAgentSearch.cancel();
+    if (tab === "groups") void loadGroups();
+  }
+
+  function onQueryInput(event: Event) {
+    query = (event.currentTarget as HTMLInputElement).value;
+    selected = null;
+    if (activeTab === "people") runPeopleSearch(query);
+    else if (activeTab === "agents") runAgentSearch(query);
+    // groups filter locally via the derived list — no request needed.
+  }
+
+  function selectActor(actor: Actor) {
+    // If this principal already has a grant, focus its row instead of adding.
+    const existing = existingActorGrant(share?.grants ?? [], actor.id);
+    if (existing) {
+      flashExisting(existing);
+      return;
+    }
+    selected = { kind: "actor", actor };
+  }
+
+  function selectGroup(group: Group) {
+    const existing = existingGroupGrant(share?.grants ?? [], group.id);
+    if (existing) {
+      flashExisting(existing);
+      return;
+    }
+    selected = { kind: "group", group };
+  }
+
+  function flashExisting(grant: Grant) {
+    selected = null;
+    const key = principalKey(grant);
+    focusKey = key;
+    pickerError = `${rowLabel(grant)} already has access.`;
+    queueMicrotask(() => {
+      const el = host?.querySelector<HTMLElement>(
+        `[data-principal-key="${cssEscape(key)}"]`,
+      );
+      el?.scrollIntoView({ block: "nearest" });
+    });
+    // Clear the highlight after a moment so it reads as a flash.
+    setTimeout(() => {
+      if (focusKey === key) focusKey = null;
+    }, 1600);
+  }
+
+  function cssEscape(value: string): string {
+    if (typeof CSS !== "undefined" && typeof CSS.escape === "function") {
+      return CSS.escape(value);
+    }
+    return value.replace(/["\\]/g, "\\$&");
+  }
+
+  function selectedPrincipal(): Principal | null {
+    if (!selected) return null;
+    return selected.kind === "actor"
+      ? { actor_id: selected.actor.id }
+      : { group_id: selected.group.id };
+  }
+
+  function selectedLabel(): string {
+    if (!selected) return "";
+    return selected.kind === "actor"
+      ? actorLabel(selected.actor)
+      : selected.group.name;
+  }
+
+  async function onShare() {
+    if (!share || !resourceType || !parent) return;
+    const principal = selectedPrincipal();
+    if (!principal || !pickerRole) return;
+    granting = true;
+    pickerError = null;
+    actionError = null;
+    const request: GrantRequest = { ...principal, role: pickerRole };
+    try {
+      const grant = await api.grant(resourceType, parent, child ?? null, request);
+      // Insert the new row (or replace any stale row for the same principal).
+      if (share) {
+        const without = share.grants.filter(
+          (g) => !(g.principal === grant.principal && g.id === grant.id),
+        );
+        share.grants = [...without, grant];
+      }
+      dispatch("share-granted", {
+        principal: grant.principal,
+        id: grant.id,
+        role: grant.role,
+      });
+      dispatch("share-changed", {});
+      // Reset the add-box for the next add.
+      selected = null;
+      query = "";
+      peopleResults = [];
+      agentResults = [];
+    } catch (err) {
+      pickerError = errorMessage(err, "Couldn't share");
+    } finally {
+      granting = false;
+    }
+  }
+
+  function pickerEmptyMessage(): string {
+    if (searching) return "Searching…";
+    if (activeTab === "people") {
+      return query.trim() ? "No people found" : "Type to search people";
+    }
+    if (activeTab === "agents") {
+      return query.trim() ? "No agents found" : "Type to search agents";
+    }
+    return "No groups";
+  }
+
+  // --- general access ------------------------------------------------------
+
+  // The "Restricted" sentinel for the principal selector (no wildcard grant).
+  const RESTRICTED = "" as const;
+
+  // The current wildcard grant (kind:"public"), reflected into the controls.
+  let wildcard = $derived(currentWildcardGrant(share?.grants ?? []));
+
+  // Which wildcard principal is currently active ("" = Restricted).
+  let generalPrincipal = $derived<WildcardPrincipal | "">(
+    wildcard ? (wildcard.id as WildcardPrincipal) : RESTRICTED,
+  );
+
+  // The current general-access role (only meaningful when not Restricted).
+  let generalRole = $derived<string>(wildcard?.role ?? "");
+
+  let generalRoles = $derived(generalAccessRoles(share?.roles ?? []));
+  let generalBusy = $state(false);
+  let generalError = $state<string | null>(null);
+
+  function generalPrincipalLabel(p: WildcardPrincipal | ""): string {
+    if (p === "*") return "Anyone";
+    if (p === "_signed_in") return "Anyone signed in";
+    return "Restricted";
+  }
+
+  async function onGeneralPrincipalChange(event: Event) {
+    const value = (event.currentTarget as HTMLSelectElement).value as
+      | WildcardPrincipal
+      | "";
+    if (value === RESTRICTED) {
+      await revokeWildcard();
+      return;
+    }
+    // Granting a new wildcard principal: if switching from another wildcard,
+    // revoke the old one first so only one general-access row exists.
+    const role = generalRole || defaultPickerRole(share?.roles ?? []) || "";
+    const previous = wildcard;
+    await setWildcard(value, role, previous);
+  }
+
+  async function onGeneralRoleChange(event: Event) {
+    const role = (event.currentTarget as HTMLSelectElement).value;
+    const principal = generalPrincipal;
+    if (principal === RESTRICTED || !role) return;
+    await setWildcard(principal, role, null);
+  }
+
+  async function setWildcard(
+    principal: WildcardPrincipal,
+    role: string,
+    revokePrevious: Grant | null,
+  ) {
+    if (!resourceType || !parent || !role) return;
+    generalBusy = true;
+    generalError = null;
+    try {
+      if (revokePrevious && revokePrevious.id !== principal) {
+        await api.revoke(resourceType, parent, child ?? null, {
+          actor_id: revokePrevious.id,
+        });
+      }
+      const grant = await api.grant(resourceType, parent, child ?? null, {
+        actor_id: principal,
+        role,
+      });
+      if (share) {
+        const without = share.grants.filter((g) => g.kind !== "public");
+        share.grants = [...without, grant];
+      }
+      dispatch("share-granted", {
+        principal: "actor",
+        id: grant.id,
+        role: grant.role,
+      });
+      dispatch("share-changed", {});
+    } catch (err) {
+      generalError = errorMessage(err, "Couldn't change general access");
+    } finally {
+      generalBusy = false;
+    }
+  }
+
+  async function revokeWildcard() {
+    if (!resourceType || !parent) return;
+    const grant = wildcard;
+    if (!grant) return;
+    generalBusy = true;
+    generalError = null;
+    try {
+      await api.revoke(resourceType, parent, child ?? null, {
+        actor_id: grant.id,
+      });
+      if (share) {
+        share.grants = share.grants.filter((g) => g.kind !== "public");
+      }
+      dispatch("share-revoked", { principal: "actor", id: grant.id });
+      dispatch("share-changed", {});
+    } catch (err) {
+      generalError = errorMessage(err, "Couldn't change general access");
+    } finally {
+      generalBusy = false;
+    }
+  }
 </script>
 
 <div class="datasette-share-dialog" bind:this={host}>
@@ -258,6 +633,183 @@
   {:else if loadError}
     <p class="datasette-share-dialog__error" role="alert">{loadError}</p>
   {:else if share}
+    {#if canManage && pickerTabs.length > 0}
+      <section
+        class="datasette-share-dialog__add"
+        aria-label="Add people, agents or groups"
+      >
+        {#if pickerTabs.length > 1}
+          <div
+            class="datasette-share-dialog__tabs"
+            role="tablist"
+            aria-label="Pick principal type"
+          >
+            {#each pickerTabs as tab (tab)}
+              <button
+                type="button"
+                role="tab"
+                id={`datasette-share-tab-${tab}`}
+                aria-selected={activeTab === tab}
+                aria-controls="datasette-share-results"
+                class="datasette-share-dialog__tab"
+                class:is-active={activeTab === tab}
+                onclick={() => selectTab(tab)}
+              >
+                {tab === "people"
+                  ? "People"
+                  : tab === "agents"
+                    ? "Agents"
+                    : "Groups"}
+              </button>
+            {/each}
+          </div>
+        {/if}
+
+        <div class="datasette-share-dialog__add-row">
+          <input
+            type="search"
+            class="datasette-share-dialog__search"
+            placeholder={activeTab === "groups"
+              ? "Filter groups…"
+              : activeTab === "agents"
+                ? "Search agents…"
+                : "Search people…"}
+            aria-label={activeTab === "groups"
+              ? "Filter groups"
+              : activeTab === "agents"
+                ? "Search agents"
+                : "Search people"}
+            value={query}
+            oninput={onQueryInput}
+          />
+          <select
+            class="datasette-share-dialog__role-select"
+            aria-label="Role for new share"
+            bind:value={pickerRole}
+            disabled={granting}
+          >
+            {#each dropdownRoles as role (role.name)}
+              <option value={role.name}>{role.name}</option>
+            {/each}
+          </select>
+          <button
+            type="button"
+            class="datasette-share-dialog__share-btn"
+            disabled={selected == null || granting || !pickerRole}
+            onclick={onShare}
+          >
+            {granting ? "Sharing…" : "Share"}
+          </button>
+        </div>
+
+        {#if selected}
+          <p class="datasette-share-dialog__selected" aria-live="polite">
+            Selected: <strong>{selectedLabel()}</strong>
+            <button
+              type="button"
+              class="datasette-share-dialog__clear-selected"
+              aria-label="Clear selection"
+              onclick={() => (selected = null)}>×</button
+            >
+          </p>
+        {/if}
+
+        {#if pickerError}
+          <p class="datasette-share-dialog__error" role="alert">{pickerError}</p>
+        {/if}
+
+        <ul
+          id="datasette-share-results"
+          class="datasette-share-dialog__results"
+          role="listbox"
+          aria-label="Search results"
+          aria-busy={searching}
+        >
+          {#if activeTab === "people"}
+            {#each peopleOptions as actor (actor.id)}
+              <li>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected?.kind === "actor" &&
+                    selected.actor.id === actor.id}
+                  class="datasette-share-dialog__result"
+                  onclick={() => selectActor(actor)}
+                >
+                  <span
+                    class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
+                    style:background-color={avatarColor(actor.id)}
+                    aria-hidden="true">{initials(actor.display_name || actor.id)}</span
+                  >
+                  <span class="datasette-share-dialog__result-text">
+                    <span class="datasette-share-dialog__name">{actorLabel(actor)}</span>
+                    {#if actor.email}
+                      <span class="datasette-share-dialog__sub">{actor.email}</span>
+                    {/if}
+                  </span>
+                </button>
+              </li>
+            {:else}
+              <li class="datasette-share-dialog__empty">{pickerEmptyMessage()}</li>
+            {/each}
+          {:else if activeTab === "agents"}
+            {#each agentOptions as agent (agent.id)}
+              <li>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected?.kind === "actor" &&
+                    selected.actor.id === agent.id}
+                  class="datasette-share-dialog__result"
+                  onclick={() => selectActor(agent)}
+                >
+                  <span
+                    class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
+                    style:background-color={avatarColor(agent.id)}
+                    aria-hidden="true">{initials(agentLabel(agent))}</span
+                  >
+                  <span class="datasette-share-dialog__result-text">
+                    <span class="datasette-share-dialog__name"
+                      >{agentLabel(agent)} <span aria-hidden="true">🤖</span></span
+                    >
+                  </span>
+                </button>
+              </li>
+            {:else}
+              <li class="datasette-share-dialog__empty">{pickerEmptyMessage()}</li>
+            {/each}
+          {:else if activeTab === "groups"}
+            {#each groupOptions as group (groupIdStr(group.id))}
+              <li>
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected?.kind === "group" &&
+                    groupIdStr(selected.group.id) === groupIdStr(group.id)}
+                  class="datasette-share-dialog__result"
+                  onclick={() => selectGroup(group)}
+                >
+                  <span
+                    class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
+                    style:background-color={avatarColor(groupIdStr(group.id))}
+                    aria-hidden="true">👥</span
+                  >
+                  <span class="datasette-share-dialog__result-text">
+                    <span class="datasette-share-dialog__name">{group.name}</span>
+                    <span class="datasette-share-dialog__sub"
+                      >{memberCountLabel(group.member_count)}</span
+                    >
+                  </span>
+                </button>
+              </li>
+            {:else}
+              <li class="datasette-share-dialog__empty">{pickerEmptyMessage()}</li>
+            {/each}
+          {/if}
+        </ul>
+      </section>
+    {/if}
+
     <section
       class="datasette-share-dialog__section"
       aria-label="People with access"
@@ -273,7 +825,12 @@
           {@const owner = isOwnerGrant(grant)}
           {@const you = isYou(grant)}
           {@const rowBusy = busy[principalKey(grant)] === true}
-          <li class="datasette-share-dialog__row" class:is-owner={owner}>
+          <li
+            class="datasette-share-dialog__row"
+            class:is-owner={owner}
+            class:is-flash={focusKey === principalKey(grant)}
+            data-principal-key={principalKey(grant)}
+          >
             <span class="datasette-share-dialog__avatar-wrap">
               {#if grant.avatar_url}
                 <img
@@ -353,6 +910,83 @@
         {/each}
       </ul>
     </section>
+
+    {#if caps.public}
+      <section
+        class="datasette-share-dialog__section datasette-share-dialog__general"
+        aria-label="General access"
+      >
+        <h3 class="datasette-share-dialog__section-title">General access</h3>
+
+        {#if generalError}
+          <p class="datasette-share-dialog__error" role="alert">{generalError}</p>
+        {/if}
+
+        <div class="datasette-share-dialog__general-row">
+          <span
+            class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials"
+            style:background-color={generalPrincipal === RESTRICTED
+              ? "#57606a"
+              : avatarColor(generalPrincipal)}
+            aria-hidden="true"
+          >
+            {generalPrincipal === RESTRICTED ? "🔒" : "🌐"}
+          </span>
+
+          <span class="datasette-share-dialog__general-text">
+            {#if canManage}
+              <select
+                class="datasette-share-dialog__general-principal"
+                aria-label="General access"
+                value={generalPrincipal}
+                disabled={generalBusy}
+                onchange={onGeneralPrincipalChange}
+              >
+                <option value={RESTRICTED}>Restricted</option>
+                <option value="_signed_in">Anyone signed in</option>
+                <option value="*">Anyone</option>
+              </select>
+            {:else}
+              <span class="datasette-share-dialog__name"
+                >{generalPrincipalLabel(generalPrincipal)}</span
+              >
+            {/if}
+            <span class="datasette-share-dialog__sub">
+              {#if generalPrincipal === RESTRICTED}
+                Only people with access can open
+              {:else if generalPrincipal === "*"}
+                Anyone on the internet can access
+              {:else}
+                Anyone signed in can access
+              {/if}
+            </span>
+          </span>
+
+          {#if generalPrincipal !== RESTRICTED}
+            {#if canManage}
+              <select
+                class="datasette-share-dialog__role-select"
+                aria-label="General access role"
+                value={generalRole}
+                disabled={generalBusy}
+                onchange={onGeneralRoleChange}
+              >
+                {#if generalRole && !generalRoles.some((r) => r.name === generalRole)}
+                  <option value={generalRole} disabled>{generalRole}</option>
+                {/if}
+                {#each generalRoles as role (role.name)}
+                  <option value={role.name}>{role.name}</option>
+                {/each}
+              </select>
+            {:else}
+              <span class="datasette-share-dialog__role-tag"
+                >{generalRole || "Custom"}</span
+              >
+            {/if}
+          {/if}
+        </div>
+      </section>
+    {/if}
   {/if}
 </div>
 
@@ -516,5 +1150,162 @@
   .datasette-share-dialog__remove:disabled {
     opacity: 0.5;
     cursor: default;
+  }
+
+  /* --- add box ----------------------------------------------------------- */
+  .datasette-share-dialog__add {
+    margin-bottom: 0.5rem;
+  }
+  .datasette-share-dialog__tabs {
+    display: flex;
+    gap: 0.25rem;
+    margin-bottom: 0.5rem;
+  }
+  .datasette-share-dialog__tab {
+    font-size: 0.8125rem;
+    padding: 0.25rem 0.625rem;
+    border: 1px solid #d0d7de;
+    border-radius: 999px;
+    background: #fff;
+    color: #57606a;
+    cursor: pointer;
+  }
+  .datasette-share-dialog__tab.is-active {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: #fff;
+  }
+  .datasette-share-dialog__add-row {
+    display: flex;
+    gap: 0.375rem;
+    align-items: center;
+  }
+  .datasette-share-dialog__search {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.875rem;
+    padding: 0.375rem 0.5rem;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+  }
+  .datasette-share-dialog__share-btn {
+    font-size: 0.8125rem;
+    padding: 0.375rem 0.75rem;
+    border: 1px solid #1f6feb;
+    border-radius: 6px;
+    background: #1f6feb;
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .datasette-share-dialog__share-btn:disabled {
+    opacity: 0.5;
+    cursor: default;
+  }
+  .datasette-share-dialog__selected {
+    margin: 0.375rem 0 0;
+    font-size: 0.8125rem;
+    color: #57606a;
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+  }
+  .datasette-share-dialog__clear-selected {
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    color: #57606a;
+    font-size: 1rem;
+    line-height: 1;
+  }
+  .datasette-share-dialog__results {
+    list-style: none;
+    margin: 0.375rem 0 0;
+    padding: 0;
+    max-height: 12rem;
+    overflow-y: auto;
+  }
+  .datasette-share-dialog__result {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    text-align: left;
+    padding: 0.375rem 0.25rem;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    border-radius: 6px;
+    color: inherit;
+  }
+  .datasette-share-dialog__result:hover,
+  .datasette-share-dialog__result:focus-visible,
+  .datasette-share-dialog__result[aria-selected="true"] {
+    background: #eef3fb;
+    outline: none;
+  }
+  .datasette-share-dialog__result-avatar {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    flex: 0 0 auto;
+  }
+  .datasette-share-dialog__result-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    line-height: 1.3;
+  }
+  .datasette-share-dialog__empty {
+    color: #57606a;
+    font-size: 0.8125rem;
+    padding: 0.5rem 0.25rem;
+  }
+
+  /* --- duplicate-add flash ---------------------------------------------- */
+  .datasette-share-dialog__row.is-flash {
+    animation: datasette-share-flash 1.6s ease-out;
+  }
+  @keyframes datasette-share-flash {
+    0%,
+    40% {
+      background: #fff8c5;
+    }
+    100% {
+      background: transparent;
+    }
+  }
+
+  /* --- general access ---------------------------------------------------- */
+  .datasette-share-dialog__general-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    padding: 0.4375rem 0;
+  }
+  .datasette-share-dialog__general-row
+    .datasette-share-dialog__avatar--initials {
+    position: static;
+    inset: auto;
+    z-index: auto;
+    flex: 0 0 auto;
+    font-size: 0.875rem;
+  }
+  .datasette-share-dialog__general-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    line-height: 1.3;
+    gap: 0.125rem;
+  }
+  .datasette-share-dialog__general-principal {
+    font-size: 0.875rem;
+    padding: 0.25rem 0.375rem;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    background: #fff;
+    color: inherit;
+    align-self: flex-start;
   }
 </style>
