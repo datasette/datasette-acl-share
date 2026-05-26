@@ -1,0 +1,19 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv
+*.egg-info/
+.eggs
+.pytest_cache
+*.db
+.DS_Store
+.vscode
+dist
+build
+node_modules/
+
+# Built frontend assets — built from source (matches sibling plugins, which
+# gitignore their build output). Run `just frontend` to regenerate.
+datasette_share/static/
+datasette_share/manifest.json
