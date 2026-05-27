@@ -1,7 +1,7 @@
 [project]
-name = "datasette-share"
+name = "datasette-acl-share"
 version = "0.0.1a1"
-description = "Reusable Google-Docs-style share dialog for Datasette (<datasette-share-dialog>)"
+description = "Reusable Google-Docs-style share dialog for Datasette (<datasette-acl-share-dialog>)"
 readme = "README.md"
 authors = [{name = "Alex Garcia"}]
 license = "Apache-2.0"
@@ -20,18 +20,18 @@ requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project.entry-points.datasette]
-share = "datasette_share"
+acl_share = "datasette_acl_share"
 
 [project.urls]
-Homepage = "https://github.com/datasette/datasette-share"
-Changelog = "https://github.com/datasette/datasette-share/releases"
-Issues = "https://github.com/datasette/datasette-share/issues"
+Homepage = "https://github.com/datasette/datasette-acl-share"
+Changelog = "https://github.com/datasette/datasette-acl-share/releases"
+Issues = "https://github.com/datasette/datasette-acl-share/issues"
 
 [tool.setuptools.packages.find]
-include = ["datasette_share"]
+include = ["datasette_acl_share"]
 
 [tool.setuptools.package-data]
-datasette_share = ["static/**/*", "manifest.json"]
+datasette_acl_share = ["static/**/*", "manifest.json"]
 
 [tool.pytest.ini_options]
 asyncio_mode = "strict"

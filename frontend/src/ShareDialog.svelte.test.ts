@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { page, userEvent } from "@vitest/browser/context";
-// Importing the component registers the <datasette-share-dialog> custom element.
+// Importing the component registers the <datasette-acl-share-dialog> custom element.
 import "./ShareDialog.svelte";
 import type { ShareState } from "./lib/types";
 
@@ -92,13 +92,13 @@ beforeEach(() => {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  document.querySelectorAll("datasette-share-dialog").forEach((n) => n.remove());
+  document.querySelectorAll("datasette-acl-share-dialog").forEach((n) => n.remove());
 });
 
 function mount(
   attrs: Record<string, string>,
 ): { el: HTMLElement; events: Record<string, CustomEvent[]> } {
-  const el = document.createElement("datasette-share-dialog");
+  const el = document.createElement("datasette-acl-share-dialog");
   for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
   const events: Record<string, CustomEvent[]> = {};
   for (const type of [
@@ -122,7 +122,7 @@ const BASE_ATTRS = {
   "actor-json": JSON.stringify({ id: "alice", kind: "user" }),
 };
 
-describe("<datasette-share-dialog> people-with-access list", () => {
+describe("<datasette-acl-share-dialog> people-with-access list", () => {
   it("renders a row per grant with names, kind badges and roles", async () => {
     on("/resource/", () => json(STATE));
     mount(BASE_ATTRS);
@@ -239,7 +239,7 @@ describe("<datasette-share-dialog> people-with-access list", () => {
     // No editing controls.
     expect(document.querySelectorAll("select").length).toBe(0);
     expect(
-      document.querySelectorAll(".datasette-share-dialog__remove").length,
+      document.querySelectorAll(".datasette-acl-share-dialog__remove").length,
     ).toBe(0);
     // Non-owner role rendered as a read-only tag.
     await expect.element(page.getByText("Editor", { exact: true })).toBeInTheDocument();
@@ -254,7 +254,7 @@ describe("<datasette-share-dialog> people-with-access list", () => {
 
 // --- add-box pickers -------------------------------------------------------
 
-describe("<datasette-share-dialog> add-box pickers", () => {
+describe("<datasette-acl-share-dialog> add-box pickers", () => {
   it("typing in People calls searchPeople (debounced) and renders results", async () => {
     on("/profiles/api/search", () => {
       // carol matches the query
@@ -284,7 +284,7 @@ describe("<datasette-share-dialog> add-box pickers", () => {
     // Results render in the floating overlay listbox.
     await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
     expect(
-      document.querySelectorAll("#datasette-share-results [role='option']")
+      document.querySelectorAll("#datasette-acl-share-results [role='option']")
         .length,
     ).toBe(1);
   });
@@ -357,7 +357,7 @@ describe("<datasette-share-dialog> add-box pickers", () => {
     // Pills cleared after a successful batch.
     await vi.waitFor(() =>
       expect(
-        document.querySelectorAll(".datasette-share-dialog__pill").length,
+        document.querySelectorAll(".datasette-acl-share-dialog__pill").length,
       ).toBe(0),
     );
   });
@@ -393,7 +393,7 @@ describe("<datasette-share-dialog> add-box pickers", () => {
     await removeBtn.click();
     await vi.waitFor(() =>
       expect(
-        document.querySelectorAll(".datasette-share-dialog__pill").length,
+        document.querySelectorAll(".datasette-acl-share-dialog__pill").length,
       ).toBe(0),
     );
     await expect
@@ -444,7 +444,7 @@ describe("<datasette-share-dialog> add-box pickers", () => {
     el.focus();
     await userEvent.keyboard("{Escape}");
     await vi.waitFor(() =>
-      expect(document.querySelector("#datasette-share-results")).toBeNull(),
+      expect(document.querySelector("#datasette-acl-share-results")).toBeNull(),
     );
   });
 
@@ -463,11 +463,11 @@ describe("<datasette-share-dialog> add-box pickers", () => {
     // and so no pill can be created for him.
     await vi.waitFor(() => {
       const opts = document.querySelectorAll(
-        "#datasette-share-results [role='option']",
+        "#datasette-acl-share-results [role='option']",
       );
       expect(opts.length).toBe(0);
     });
-    expect(document.querySelectorAll(".datasette-share-dialog__pill").length).toBe(
+    expect(document.querySelectorAll(".datasette-acl-share-dialog__pill").length).toBe(
       0,
     );
     // No grant call was issued.
@@ -481,7 +481,7 @@ describe("<datasette-share-dialog> add-box pickers", () => {
       .element(page.getByRole("tab", { name: "People" }))
       .toBeInTheDocument();
     expect(
-      document.querySelector("[role='tab'][id='datasette-share-tab-agents']"),
+      document.querySelector("[role='tab'][id='datasette-acl-share-tab-agents']"),
     ).toBeNull();
   });
 
@@ -496,7 +496,7 @@ describe("<datasette-share-dialog> add-box pickers", () => {
 
 // --- general access --------------------------------------------------------
 
-describe("<datasette-share-dialog> general access", () => {
+describe("<datasette-acl-share-dialog> general access", () => {
   it("choosing 'Anyone signed in' then a role issues a _signed_in grant", async () => {
     on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
       const req = JSON.parse(init.body as string);

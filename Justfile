@@ -1,10 +1,10 @@
-# datasette-share — dev recipes
+# datasette-acl-share — dev recipes
 #
 # First-time setup:
 #   just frontend-install
 #
 # Static build (no HMR):
-#   just frontend          # builds into datasette_share/static/gen + manifest.json
+#   just frontend          # builds into datasette_acl_share/static/gen + manifest.json
 #
 # Live HMR workflow (two terminals):
 #   Terminal 1:  just frontend-dev    # vite dev server on :5180
@@ -40,7 +40,7 @@ dev-with-hmr *flags:
     --with 'datasette>=1a' \
     datasette \
     --root \
-    -s plugins.datasette-vite.dev_paths.datasette_share 'http://localhost:5180/-/static-plugins/datasette_share/' \
+    -s plugins.datasette-vite.dev_paths.datasette_acl_share 'http://localhost:5180/-/static-plugins/datasette_acl_share/' \
     tmp.db --create \
     -p 5171 \
     --internal internal.db \

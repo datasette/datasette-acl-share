@@ -1,7 +1,7 @@
-# datasette-share
+# datasette-acl-share
 
 A reusable, Google-Docs-style **share dialog** for Datasette, shipped as a
-framework-agnostic Svelte 5 custom element: `<datasette-share-dialog>`.
+framework-agnostic Svelte 5 custom element: `<datasette-acl-share-dialog>`.
 
 One component, embedded by every document plugin (paper, places, sheets, …). It
 orchestrates three backends so consumers write almost no sharing code:
@@ -21,12 +21,12 @@ Drop the tag anywhere — inside a Svelte/Preact app, or in plain server-rendere
 HTML (custom elements are just DOM):
 
 ```html
-<datasette-share-dialog
+<datasette-acl-share-dialog
   resource-type="paper-doc"
   parent="mydb"
   child="42"
   resource-label="Q2 Planning"
-></datasette-share-dialog>
+></datasette-acl-share-dialog>
 ```
 
 On connect the element calls the [datasette-acl](https://github.com/datasette/datasette-acl)
@@ -68,28 +68,28 @@ general-access wildcard (`*` / `_signed_in`).
 The bundle is built with and served via
 [datasette-vite](https://github.com/datasette/datasette-vite). It is **not**
 injected site-wide — a host plugin opts in so the dialog only loads on pages
-that use it. Call the `datasette_share_assets(datasette)` helper from your
+that use it. Call the `datasette_acl_share_assets(datasette)` helper from your
 plugin's own asset hooks:
 
 ```python
 from datasette import hookimpl
-from datasette_share import datasette_share_assets
+from datasette_acl_share import datasette_acl_share_assets
 
 @hookimpl
 def extra_js_urls(datasette, request):
     # gate on your own page(s) so it doesn't load everywhere
     if not _is_my_page(request):
         return []
-    return datasette_share_assets(datasette)["js"]
+    return datasette_acl_share_assets(datasette)["js"]
 
 @hookimpl
 def extra_css_urls(datasette, request):
     if not _is_my_page(request):
         return []
-    return datasette_share_assets(datasette)["css"]
+    return datasette_acl_share_assets(datasette)["css"]
 ```
 
-`datasette_share_assets(datasette)` returns
+`datasette_acl_share_assets(datasette)` returns
 `{"js": [{"url": …, "module": True}], "css": [url, …]}`. The `js` list is ready
 for Datasette's `extra_js_urls` hook; `css` for `extra_css_urls`. In
 datasette-vite dev mode the `js` list includes the Vite client (HMR) and `css`
@@ -135,7 +135,7 @@ If you nonetheless want belt-and-braces, pass Datasette's `csrftoken()` (from a
 template or page data) into the element:
 
 ```html
-<datasette-share-dialog … csrftoken="{{ csrftoken() }}"></datasette-share-dialog>
+<datasette-acl-share-dialog … csrftoken="{{ csrftoken() }}"></datasette-acl-share-dialog>
 ```
 
 ## Embedding
@@ -145,14 +145,14 @@ template or page data) into the element:
 Custom elements are just DOM, so a Svelte app renders the tag directly:
 
 ```svelte
-<datasette-share-dialog
+<datasette-acl-share-dialog
   resource-type="paper-doc"
   parent={dbName}
   child={docId}
   resource-label={docTitle}
   actor-json={JSON.stringify(actor)}
   onshare-revoked={onShareRevoked}
-></datasette-share-dialog>
+></datasette-acl-share-dialog>
 ```
 
 ### Plain server-rendered HTML (town, kanban, Jinja pages)
@@ -161,12 +161,12 @@ No framework needed — include the bundle (via the helper above) and drop the
 tag into a template, wiring events with `addEventListener`:
 
 ```html
-<datasette-share-dialog
+<datasette-acl-share-dialog
   resource-type="places-list" parent="mydb" child="7"
   resource-label="Lunch spots"
-></datasette-share-dialog>
+></datasette-acl-share-dialog>
 <script type="module">
-  document.querySelector("datasette-share-dialog")
+  document.querySelector("datasette-acl-share-dialog")
     .addEventListener("share-changed", () => console.log("sharing changed"));
 </script>
 ```
@@ -191,7 +191,7 @@ The dialog adapts to whichever backends are installed:
 ## Layout
 
 ```
-datasette_share/   Python package (built assets: static/gen + manifest.json)
+datasette_acl_share/   Python package (built assets: static/gen + manifest.json)
 frontend/          Svelte 5 + TS source (Vite custom-element build)
 ```
 
@@ -206,7 +206,7 @@ just frontend-dev       # terminal 1: vite dev server (port 5180)
 just dev-with-hmr       # terminal 2: datasette pointed at the dev server
 ```
 
-Built assets (`datasette_share/static/`, `manifest.json`) are gitignored and
+Built assets (`datasette_acl_share/static/`, `manifest.json`) are gitignored and
 produced by the build, matching the sibling Svelte plugins.
 
 ### Tests

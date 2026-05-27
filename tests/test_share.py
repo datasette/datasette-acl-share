@@ -1,4 +1,4 @@
-"""Python tests for the datasette-share asset helper + capability probe.
+"""Python tests for the datasette-acl-share asset helper + capability probe.
 
 Run: ``uv run pytest`` (or ``uv run --with pytest pytest``).
 
@@ -14,7 +14,7 @@ import json
 import pytest
 from datasette.app import Datasette
 
-from datasette_share import (
+from datasette_acl_share import (
     datasette_share_assets,
     share_capabilities,
 )
@@ -26,7 +26,7 @@ async def test_plugin_is_installed():
     response = await datasette.client.get("/-/plugins.json")
     assert response.status_code == 200
     names = {p["name"] for p in response.json()}
-    assert "datasette-share" in names
+    assert "datasette-acl-share" in names
 
 
 # --- asset helper --------------------------------------------------------
@@ -38,7 +38,7 @@ def _write_manifest(tmp_path, manifest):
 
 def test_assets_prod_mode(monkeypatch, tmp_path):
     """datasette_share_assets resolves hashed JS + CSS from the vite manifest,
-    pointing at /-/static-plugins/datasette_share/… (mirrors datasette-vite's
+    pointing at /-/static-plugins/datasette_acl_share/… (mirrors datasette-vite's
     own prod-mode assertions)."""
     manifest = {
         "src/main.ts": {
@@ -53,9 +53,9 @@ def test_assets_prod_mode(monkeypatch, tmp_path):
     # Point the package's __file__-derived manifest dir at the temp manifest by
     # patching the helpers' default resolution: datasette-vite loads the
     # manifest next to the package, so we override the package dir via a shim.
-    import datasette_share
+    import datasette_acl_share
 
-    monkeypatch.setattr(datasette_share, "ENTRYPOINT", "src/main.ts")
+    monkeypatch.setattr(datasette_acl_share, "ENTRYPOINT", "src/main.ts")
 
     datasette = Datasette(memory=True)
 
@@ -80,18 +80,18 @@ def test_assets_prod_mode(monkeypatch, tmp_path):
             manifest_dir=tmp_path,
         )
 
-    monkeypatch.setattr(datasette_share, "vite_js_urls", js)
-    monkeypatch.setattr(datasette_share, "vite_css_urls", css)
+    monkeypatch.setattr(datasette_acl_share, "vite_js_urls", js)
+    monkeypatch.setattr(datasette_acl_share, "vite_css_urls", css)
 
     assets = datasette_share_assets(datasette)
     assert assets["js"] == [
         {
-            "url": "/-/static-plugins/datasette_share/gen/main-abc123.js",
+            "url": "/-/static-plugins/datasette_acl_share/gen/main-abc123.js",
             "module": True,
         }
     ]
     assert assets["css"] == [
-        "/-/static-plugins/datasette_share/gen/main-def456.css"
+        "/-/static-plugins/datasette_acl_share/gen/main-def456.css"
     ]
 
 
@@ -105,20 +105,20 @@ def test_assets_real_manifest():
     assert len(assets["js"]) == 1
     entry = assets["js"][0]
     assert entry["module"] is True
-    assert entry["url"].startswith("/-/static-plugins/datasette_share/")
+    assert entry["url"].startswith("/-/static-plugins/datasette_acl_share/")
     assert entry["url"].endswith(".js")
     assert isinstance(assets["css"], list)
 
 
 def test_assets_dev_mode():
-    """With a datasette-vite dev_path set for datasette_share, the helper yields
+    """With a datasette-vite dev_path set for datasette_acl_share, the helper yields
     the Vite client + dev-server entry and no CSS (Vite injects it via JS)."""
     datasette = Datasette(
         memory=True,
         metadata={
             "plugins": {
                 "datasette-vite": {
-                    "dev_paths": {"datasette_share": "http://localhost:5180/"}
+                    "dev_paths": {"datasette_acl_share": "http://localhost:5180/"}
                 }
             }
         },
@@ -148,13 +148,13 @@ def test_capabilities_degrade_gracefully():
 
 def test_capabilities_reflect_installed_plugins(monkeypatch):
     """When profiles + agent report installed, the corresponding flags flip."""
-    import datasette_share
+    import datasette_acl_share
 
     monkeypatch.setattr(
-        datasette_share,
+        datasette_acl_share,
         "_installed_plugin_names",
         lambda: {
-            "datasette-share",
+            "datasette-acl-share",
             "datasette-user-profiles",
             "datasette-agent",
         },
@@ -170,12 +170,12 @@ def test_capabilities_reflect_installed_plugins(monkeypatch):
 
 def test_capabilities_partial(monkeypatch):
     """profiles installed, agent absent → people true, agents false."""
-    import datasette_share
+    import datasette_acl_share
 
     monkeypatch.setattr(
-        datasette_share,
+        datasette_acl_share,
         "_installed_plugin_names",
-        lambda: {"datasette-share", "datasette-user-profiles"},
+        lambda: {"datasette-acl-share", "datasette-user-profiles"},
     )
     caps = share_capabilities()
     assert caps["people"] is True

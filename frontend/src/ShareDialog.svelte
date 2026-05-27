@@ -1,9 +1,9 @@
 <svelte:options
   customElement={{
-    tag: "datasette-share-dialog",
+    tag: "datasette-acl-share-dialog",
     // Light DOM (no shadow root) so host pages can theme the dialog and there
     // are no shadow-DOM form/focus quirks. Styles are emitted with
-    // `datasette-share-`-prefixed selectors (see plan §2).
+    // `datasette-acl-share-`-prefixed selectors (see plan §2).
     shadow: "none",
   }}
 />
@@ -766,27 +766,27 @@
   }
 </script>
 
-<div class="datasette-share-dialog" bind:this={host}>
-  <header class="datasette-share-dialog__header">
-    <h2 class="datasette-share-dialog__title">
+<div class="datasette-acl-share-dialog" bind:this={host}>
+  <header class="datasette-acl-share-dialog__header">
+    <h2 class="datasette-acl-share-dialog__title">
       {resourceLabel ? `Share “${resourceLabel}”` : "Share"}
     </h2>
   </header>
 
   {#if loading}
-    <p class="datasette-share-dialog__loading">Loading…</p>
+    <p class="datasette-acl-share-dialog__loading">Loading…</p>
   {:else if loadError}
-    <p class="datasette-share-dialog__error" role="alert">{loadError}</p>
+    <p class="datasette-acl-share-dialog__error" role="alert">{loadError}</p>
   {:else if share}
     {#if canManage && pickerTabs.length > 0}
       <section
-        class="datasette-share-dialog__add"
+        class="datasette-acl-share-dialog__add"
         aria-label="Add people, agents or groups"
         bind:this={addBoxEl}
       >
         {#if pickerTabs.length > 1}
           <div
-            class="datasette-share-dialog__tabs"
+            class="datasette-acl-share-dialog__tabs"
             role="tablist"
             aria-label="Pick principal type"
           >
@@ -794,10 +794,10 @@
               <button
                 type="button"
                 role="tab"
-                id={`datasette-share-tab-${tab}`}
+                id={`datasette-acl-share-tab-${tab}`}
                 aria-selected={activeTab === tab}
-                aria-controls="datasette-share-results"
-                class="datasette-share-dialog__tab"
+                aria-controls="datasette-acl-share-results"
+                class="datasette-acl-share-dialog__tab"
                 class:is-active={activeTab === tab}
                 onclick={() => selectTab(tab)}
               >
@@ -811,15 +811,15 @@
           </div>
         {/if}
 
-        <div class="datasette-share-dialog__add-row">
+        <div class="datasette-acl-share-dialog__add-row">
           <!-- The search field + floating results overlay share a relatively
                positioned wrapper, so the listbox can be absolutely positioned
                beneath the input without reflowing the rest of the dialog. -->
-          <div class="datasette-share-dialog__search-wrap">
+          <div class="datasette-acl-share-dialog__search-wrap">
             <input
               type="search"
               bind:this={searchEl}
-              class="datasette-share-dialog__search"
+              class="datasette-acl-share-dialog__search"
               placeholder={activeTab === "groups"
                 ? "Filter groups…"
                 : activeTab === "agents"
@@ -832,10 +832,10 @@
                   : "Search people"}
               role="combobox"
               aria-expanded={showDropdown}
-              aria-controls="datasette-share-results"
+              aria-controls="datasette-acl-share-results"
               aria-autocomplete="list"
               aria-activedescendant={highlight >= 0
-                ? `datasette-share-opt-${highlight}`
+                ? `datasette-acl-share-opt-${highlight}`
                 : undefined}
               value={query}
               oninput={onQueryInput}
@@ -845,8 +845,8 @@
 
             {#if showDropdown}
               <ul
-                id="datasette-share-results"
-                class="datasette-share-dialog__results"
+                id="datasette-acl-share-results"
+                class="datasette-acl-share-dialog__results"
                 role="listbox"
                 aria-label="Search results"
                 aria-busy={searching}
@@ -856,32 +856,32 @@
                     <button
                       type="button"
                       role="option"
-                      id={`datasette-share-opt-${i}`}
+                      id={`datasette-acl-share-opt-${i}`}
                       aria-selected={highlight === i}
-                      class="datasette-share-dialog__result"
+                      class="datasette-acl-share-dialog__result"
                       class:is-highlighted={highlight === i}
                       onmousemove={() => (highlight = i)}
                       onclick={() => pickOption(opt)}
                     >
                       <span
-                        class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__result-avatar"
+                        class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__result-avatar"
                         style:background-color={avatarColor(opt.id)}
                         aria-hidden="true"
                         >{opt.kind === "group"
                           ? "👥"
                           : initials(opt.label)}</span
                       >
-                      <span class="datasette-share-dialog__result-text">
-                        <span class="datasette-share-dialog__name"
+                      <span class="datasette-acl-share-dialog__result-text">
+                        <span class="datasette-acl-share-dialog__name"
                           >{opt.label}{#if opt.kind === "agent"}
                             <span aria-hidden="true">🤖</span>{/if}</span
                         >
                         {#if opt.kind === "user" && opt.email}
-                          <span class="datasette-share-dialog__sub"
+                          <span class="datasette-acl-share-dialog__sub"
                             >{opt.email}</span
                           >
                         {:else if opt.kind === "group" && opt.member_count != null}
-                          <span class="datasette-share-dialog__sub"
+                          <span class="datasette-acl-share-dialog__sub"
                             >{memberCountLabel(opt.member_count)}</span
                           >
                         {/if}
@@ -889,7 +889,7 @@
                     </button>
                   </li>
                 {:else}
-                  <li class="datasette-share-dialog__empty">
+                  <li class="datasette-acl-share-dialog__empty">
                     {pickerEmptyMessage()}
                   </li>
                 {/each}
@@ -898,7 +898,7 @@
           </div>
 
           <select
-            class="datasette-share-dialog__role-select"
+            class="datasette-acl-share-dialog__role-select"
             aria-label="Role for new share"
             bind:value={pickerRole}
             disabled={granting}
@@ -909,7 +909,7 @@
           </select>
           <button
             type="button"
-            class="datasette-share-dialog__share-btn"
+            class="datasette-acl-share-dialog__share-btn"
             disabled={pills.length === 0 || granting || !pickerRole}
             onclick={onShare}
           >
@@ -918,22 +918,22 @@
         </div>
 
         {#if pills.length > 0}
-          <ul class="datasette-share-dialog__pills" aria-label="Selected to share">
+          <ul class="datasette-acl-share-dialog__pills" aria-label="Selected to share">
             {#each pills as pill (pillKey(pill))}
-              <li class="datasette-share-dialog__pill">
+              <li class="datasette-acl-share-dialog__pill">
                 <span
-                  class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials datasette-share-dialog__pill-avatar"
+                  class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__pill-avatar"
                   style:background-color={avatarColor(pill.id)}
                   aria-hidden="true"
                   >{pill.kind === "group" ? "👥" : initials(pill.label)}</span
                 >
-                <span class="datasette-share-dialog__pill-label"
+                <span class="datasette-acl-share-dialog__pill-label"
                   >{pill.label}{#if pill.kind === "agent"}
                     <span aria-hidden="true">🤖</span>{/if}</span
                 >
                 <button
                   type="button"
-                  class="datasette-share-dialog__pill-remove"
+                  class="datasette-acl-share-dialog__pill-remove"
                   aria-label={`Remove ${pill.label}`}
                   disabled={granting}
                   onclick={() => removePillAt(pill)}>×</button
@@ -944,36 +944,36 @@
         {/if}
 
         {#if pickerError}
-          <p class="datasette-share-dialog__error" role="alert">{pickerError}</p>
+          <p class="datasette-acl-share-dialog__error" role="alert">{pickerError}</p>
         {/if}
       </section>
     {/if}
 
     <section
-      class="datasette-share-dialog__section"
+      class="datasette-acl-share-dialog__section"
       aria-label="People with access"
     >
-      <h3 class="datasette-share-dialog__section-title">People with access</h3>
+      <h3 class="datasette-acl-share-dialog__section-title">People with access</h3>
 
       {#if actionError}
-        <p class="datasette-share-dialog__error" role="alert">{actionError}</p>
+        <p class="datasette-acl-share-dialog__error" role="alert">{actionError}</p>
       {/if}
 
-      <ul class="datasette-share-dialog__list">
+      <ul class="datasette-acl-share-dialog__list">
         {#each orderedGrants as grant (principalKey(grant))}
           {@const owner = isOwnerGrant(grant)}
           {@const you = isYou(grant)}
           {@const rowBusy = busy[principalKey(grant)] === true}
           <li
-            class="datasette-share-dialog__row"
+            class="datasette-acl-share-dialog__row"
             class:is-owner={owner}
             class:is-flash={focusKey === principalKey(grant)}
             data-principal-key={principalKey(grant)}
           >
-            <span class="datasette-share-dialog__avatar-wrap">
+            <span class="datasette-acl-share-dialog__avatar-wrap">
               {#if grant.avatar_url}
                 <img
-                  class="datasette-share-dialog__avatar"
+                  class="datasette-acl-share-dialog__avatar"
                   src={grant.avatar_url}
                   alt=""
                   onerror={(e) => {
@@ -985,7 +985,7 @@
                 />
               {/if}
               <span
-                class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials"
+                class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials"
                 style:background-color={avatarColor(grant.id)}
                 aria-hidden="true"
               >
@@ -993,31 +993,31 @@
               </span>
               {#if badge(grant.kind)}
                 <span
-                  class="datasette-share-dialog__kind-badge"
+                  class="datasette-acl-share-dialog__kind-badge"
                   title={grant.kind}>{badge(grant.kind)}</span
                 >
               {/if}
             </span>
 
-            <span class="datasette-share-dialog__identity">
-              <span class="datasette-share-dialog__name">
+            <span class="datasette-acl-share-dialog__identity">
+              <span class="datasette-acl-share-dialog__name">
                 {rowLabel(grant)}{#if you}<span
-                    class="datasette-share-dialog__you"> (you)</span
+                    class="datasette-acl-share-dialog__you"> (you)</span
                   >{/if}
               </span>
               {#if rowSubLabel(grant)}
-                <span class="datasette-share-dialog__sub"
+                <span class="datasette-acl-share-dialog__sub"
                   >{rowSubLabel(grant)}</span
                 >
               {/if}
             </span>
 
-            <span class="datasette-share-dialog__controls">
+            <span class="datasette-acl-share-dialog__controls">
               {#if owner}
-                <span class="datasette-share-dialog__role-tag">Owner</span>
+                <span class="datasette-acl-share-dialog__role-tag">Owner</span>
               {:else if canManage}
                 <select
-                  class="datasette-share-dialog__role-select"
+                  class="datasette-acl-share-dialog__role-select"
                   aria-label={`Role for ${rowLabel(grant)}`}
                   value={grant.role ?? ""}
                   disabled={rowBusy}
@@ -1032,7 +1032,7 @@
                 </select>
                 <button
                   type="button"
-                  class="datasette-share-dialog__remove"
+                  class="datasette-acl-share-dialog__remove"
                   aria-label={`Remove ${rowLabel(grant)}`}
                   disabled={rowBusy}
                   onclick={() => onRemove(grant)}
@@ -1040,7 +1040,7 @@
                   ×
                 </button>
               {:else}
-                <span class="datasette-share-dialog__role-tag">
+                <span class="datasette-acl-share-dialog__role-tag">
                   {grant.role ?? "Custom"}
                 </span>
               {/if}
@@ -1052,18 +1052,18 @@
 
     {#if caps.public}
       <section
-        class="datasette-share-dialog__section datasette-share-dialog__general"
+        class="datasette-acl-share-dialog__section datasette-acl-share-dialog__general"
         aria-label="General access"
       >
-        <h3 class="datasette-share-dialog__section-title">General access</h3>
+        <h3 class="datasette-acl-share-dialog__section-title">General access</h3>
 
         {#if generalError}
-          <p class="datasette-share-dialog__error" role="alert">{generalError}</p>
+          <p class="datasette-acl-share-dialog__error" role="alert">{generalError}</p>
         {/if}
 
-        <div class="datasette-share-dialog__general-row">
+        <div class="datasette-acl-share-dialog__general-row">
           <span
-            class="datasette-share-dialog__avatar datasette-share-dialog__avatar--initials"
+            class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials"
             style:background-color={generalPrincipal === RESTRICTED
               ? "#57606a"
               : avatarColor(generalPrincipal)}
@@ -1072,10 +1072,10 @@
             {generalPrincipal === RESTRICTED ? "🔒" : "🌐"}
           </span>
 
-          <span class="datasette-share-dialog__general-text">
+          <span class="datasette-acl-share-dialog__general-text">
             {#if canManage}
               <select
-                class="datasette-share-dialog__general-principal"
+                class="datasette-acl-share-dialog__general-principal"
                 aria-label="General access"
                 value={generalPrincipal}
                 disabled={generalBusy}
@@ -1086,11 +1086,11 @@
                 <option value="*">Anyone</option>
               </select>
             {:else}
-              <span class="datasette-share-dialog__name"
+              <span class="datasette-acl-share-dialog__name"
                 >{generalPrincipalLabel(generalPrincipal)}</span
               >
             {/if}
-            <span class="datasette-share-dialog__sub">
+            <span class="datasette-acl-share-dialog__sub">
               {#if generalPrincipal === RESTRICTED}
                 Only people with access can open
               {:else if generalPrincipal === "*"}
@@ -1104,7 +1104,7 @@
           {#if generalPrincipal !== RESTRICTED}
             {#if canManage}
               <select
-                class="datasette-share-dialog__role-select"
+                class="datasette-acl-share-dialog__role-select"
                 aria-label="General access role"
                 value={generalRole}
                 disabled={generalBusy}
@@ -1118,7 +1118,7 @@
                 {/each}
               </select>
             {:else}
-              <span class="datasette-share-dialog__role-tag"
+              <span class="datasette-acl-share-dialog__role-tag"
                 >{generalRole || "Custom"}</span
               >
             {/if}
@@ -1130,7 +1130,7 @@
 </div>
 
 <style>
-  .datasette-share-dialog {
+  .datasette-acl-share-dialog {
     font-family:
       system-ui,
       -apple-system,
@@ -1139,15 +1139,15 @@
     color: #1f2328;
     max-width: 32rem;
   }
-  .datasette-share-dialog__header {
+  .datasette-acl-share-dialog__header {
     margin-bottom: 0.75rem;
   }
-  .datasette-share-dialog__title {
+  .datasette-acl-share-dialog__title {
     margin: 0;
     font-size: 1.125rem;
     font-weight: 600;
   }
-  .datasette-share-dialog__section-title {
+  .datasette-acl-share-dialog__section-title {
     margin: 0.75rem 0 0.375rem;
     font-size: 0.75rem;
     font-weight: 600;
@@ -1155,11 +1155,11 @@
     letter-spacing: 0.04em;
     color: #57606a;
   }
-  .datasette-share-dialog__loading {
+  .datasette-acl-share-dialog__loading {
     color: #57606a;
     padding: 0.75rem 0;
   }
-  .datasette-share-dialog__error {
+  .datasette-acl-share-dialog__error {
     color: #a0202a;
     background: #ffebe9;
     border: 1px solid #ffced0;
@@ -1168,28 +1168,28 @@
     margin: 0 0 0.5rem;
     font-size: 0.8125rem;
   }
-  .datasette-share-dialog__list {
+  .datasette-acl-share-dialog__list {
     list-style: none;
     margin: 0;
     padding: 0;
   }
-  .datasette-share-dialog__row {
+  .datasette-acl-share-dialog__row {
     display: flex;
     align-items: center;
     gap: 0.625rem;
     padding: 0.4375rem 0;
     border-bottom: 1px solid #f0f1f2;
   }
-  .datasette-share-dialog__row:last-child {
+  .datasette-acl-share-dialog__row:last-child {
     border-bottom: none;
   }
-  .datasette-share-dialog__avatar-wrap {
+  .datasette-acl-share-dialog__avatar-wrap {
     position: relative;
     width: 2rem;
     height: 2rem;
     flex: 0 0 auto;
   }
-  .datasette-share-dialog__avatar {
+  .datasette-acl-share-dialog__avatar {
     width: 2rem;
     height: 2rem;
     border-radius: 50%;
@@ -1198,7 +1198,7 @@
   }
   /* The initials chip sits behind the <img>; when the image loads it covers
    * the chip, and when it errors (onerror hides it) the chip shows through. */
-  .datasette-share-dialog__avatar--initials {
+  .datasette-acl-share-dialog__avatar--initials {
     position: absolute;
     inset: 0;
     z-index: -1;
@@ -1210,7 +1210,7 @@
     font-weight: 600;
     text-transform: uppercase;
   }
-  .datasette-share-dialog__kind-badge {
+  .datasette-acl-share-dialog__kind-badge {
     position: absolute;
     right: -2px;
     bottom: -2px;
@@ -1220,36 +1220,36 @@
     border-radius: 50%;
     padding: 1px;
   }
-  .datasette-share-dialog__identity {
+  .datasette-acl-share-dialog__identity {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
     flex-direction: column;
     line-height: 1.3;
   }
-  .datasette-share-dialog__name {
+  .datasette-acl-share-dialog__name {
     font-size: 0.875rem;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .datasette-share-dialog__you {
+  .datasette-acl-share-dialog__you {
     color: #57606a;
   }
-  .datasette-share-dialog__sub {
+  .datasette-acl-share-dialog__sub {
     font-size: 0.75rem;
     color: #57606a;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .datasette-share-dialog__controls {
+  .datasette-acl-share-dialog__controls {
     flex: 0 0 auto;
     display: flex;
     align-items: center;
     gap: 0.375rem;
   }
-  .datasette-share-dialog__role-select {
+  .datasette-acl-share-dialog__role-select {
     font-size: 0.8125rem;
     padding: 0.25rem 0.375rem;
     border: 1px solid #d0d7de;
@@ -1257,17 +1257,17 @@
     background: #fff;
     color: inherit;
   }
-  .datasette-share-dialog__role-select:disabled {
+  .datasette-acl-share-dialog__role-select:disabled {
     opacity: 0.6;
   }
-  .datasette-share-dialog__role-tag {
+  .datasette-acl-share-dialog__role-tag {
     font-size: 0.75rem;
     color: #57606a;
     padding: 0.125rem 0.5rem;
     background: #eef1f4;
     border-radius: 6px;
   }
-  .datasette-share-dialog__remove {
+  .datasette-acl-share-dialog__remove {
     font-size: 1rem;
     line-height: 1;
     width: 1.5rem;
@@ -1281,26 +1281,26 @@
     cursor: pointer;
     color: #57606a;
   }
-  .datasette-share-dialog__remove:hover:not(:disabled) {
+  .datasette-acl-share-dialog__remove:hover:not(:disabled) {
     background: #ffebe9;
     border-color: #ffced0;
     color: #a0202a;
   }
-  .datasette-share-dialog__remove:disabled {
+  .datasette-acl-share-dialog__remove:disabled {
     opacity: 0.5;
     cursor: default;
   }
 
   /* --- add box ----------------------------------------------------------- */
-  .datasette-share-dialog__add {
+  .datasette-acl-share-dialog__add {
     margin-bottom: 0.5rem;
   }
-  .datasette-share-dialog__tabs {
+  .datasette-acl-share-dialog__tabs {
     display: flex;
     gap: 0.25rem;
     margin-bottom: 0.5rem;
   }
-  .datasette-share-dialog__tab {
+  .datasette-acl-share-dialog__tab {
     font-size: 0.8125rem;
     padding: 0.25rem 0.625rem;
     border: 1px solid #d0d7de;
@@ -1309,23 +1309,23 @@
     color: #57606a;
     cursor: pointer;
   }
-  .datasette-share-dialog__tab.is-active {
+  .datasette-acl-share-dialog__tab.is-active {
     background: #1f6feb;
     border-color: #1f6feb;
     color: #fff;
   }
-  .datasette-share-dialog__add-row {
+  .datasette-acl-share-dialog__add-row {
     display: flex;
     gap: 0.375rem;
     align-items: center;
   }
   /* Anchor for the floating results overlay. */
-  .datasette-share-dialog__search-wrap {
+  .datasette-acl-share-dialog__search-wrap {
     position: relative;
     flex: 1 1 auto;
     min-width: 0;
   }
-  .datasette-share-dialog__search {
+  .datasette-acl-share-dialog__search {
     width: 100%;
     min-width: 0;
     box-sizing: border-box;
@@ -1334,7 +1334,7 @@
     border: 1px solid #d0d7de;
     border-radius: 6px;
   }
-  .datasette-share-dialog__share-btn {
+  .datasette-acl-share-dialog__share-btn {
     font-size: 0.8125rem;
     padding: 0.375rem 0.75rem;
     border: 1px solid #1f6feb;
@@ -1344,12 +1344,12 @@
     cursor: pointer;
     white-space: nowrap;
   }
-  .datasette-share-dialog__share-btn:disabled {
+  .datasette-acl-share-dialog__share-btn:disabled {
     opacity: 0.5;
     cursor: default;
   }
   /* --- selected pills ---------------------------------------------------- */
-  .datasette-share-dialog__pills {
+  .datasette-acl-share-dialog__pills {
     list-style: none;
     display: flex;
     flex-wrap: wrap;
@@ -1357,7 +1357,7 @@
     margin: 0.5rem 0 0;
     padding: 0;
   }
-  .datasette-share-dialog__pill {
+  .datasette-acl-share-dialog__pill {
     display: inline-flex;
     align-items: center;
     gap: 0.375rem;
@@ -1368,7 +1368,7 @@
     border-radius: 999px;
     font-size: 0.8125rem;
   }
-  .datasette-share-dialog__pill-avatar {
+  .datasette-acl-share-dialog__pill-avatar {
     position: static;
     inset: auto;
     z-index: auto;
@@ -1377,12 +1377,12 @@
     height: 1.5rem;
     font-size: 0.625rem;
   }
-  .datasette-share-dialog__pill-label {
+  .datasette-acl-share-dialog__pill-label {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
-  .datasette-share-dialog__pill-remove {
+  .datasette-acl-share-dialog__pill-remove {
     flex: 0 0 auto;
     font-size: 0.875rem;
     line-height: 1;
@@ -1397,11 +1397,11 @@
     cursor: pointer;
     color: #57606a;
   }
-  .datasette-share-dialog__pill-remove:hover:not(:disabled) {
+  .datasette-acl-share-dialog__pill-remove:hover:not(:disabled) {
     background: #ffebe9;
     color: #a0202a;
   }
-  .datasette-share-dialog__pill-remove:disabled {
+  .datasette-acl-share-dialog__pill-remove:disabled {
     opacity: 0.5;
     cursor: default;
   }
@@ -1410,7 +1410,7 @@
   /* The results render as an absolutely-positioned autocomplete dropdown that
      floats over the rest of the dialog, so adding results never reflows the
      People-with-access / General-access sections below. */
-  .datasette-share-dialog__results {
+  .datasette-acl-share-dialog__results {
     list-style: none;
     margin: 0;
     padding: 0.25rem;
@@ -1426,7 +1426,7 @@
     border-radius: 8px;
     box-shadow: 0 8px 24px rgba(31, 35, 40, 0.18);
   }
-  .datasette-share-dialog__result {
+  .datasette-acl-share-dialog__result {
     display: flex;
     align-items: center;
     gap: 0.5rem;
@@ -1439,36 +1439,36 @@
     border-radius: 6px;
     color: inherit;
   }
-  .datasette-share-dialog__result:hover,
-  .datasette-share-dialog__result:focus-visible,
-  .datasette-share-dialog__result.is-highlighted,
-  .datasette-share-dialog__result[aria-selected="true"] {
+  .datasette-acl-share-dialog__result:hover,
+  .datasette-acl-share-dialog__result:focus-visible,
+  .datasette-acl-share-dialog__result.is-highlighted,
+  .datasette-acl-share-dialog__result[aria-selected="true"] {
     background: #eef3fb;
     outline: none;
   }
-  .datasette-share-dialog__result-avatar {
+  .datasette-acl-share-dialog__result-avatar {
     position: static;
     inset: auto;
     z-index: auto;
     flex: 0 0 auto;
   }
-  .datasette-share-dialog__result-text {
+  .datasette-acl-share-dialog__result-text {
     display: flex;
     flex-direction: column;
     min-width: 0;
     line-height: 1.3;
   }
-  .datasette-share-dialog__empty {
+  .datasette-acl-share-dialog__empty {
     color: #57606a;
     font-size: 0.8125rem;
     padding: 0.5rem 0.25rem;
   }
 
   /* --- duplicate-add flash ---------------------------------------------- */
-  .datasette-share-dialog__row.is-flash {
-    animation: datasette-share-flash 1.6s ease-out;
+  .datasette-acl-share-dialog__row.is-flash {
+    animation: datasette-acl-share-flash 1.6s ease-out;
   }
-  @keyframes datasette-share-flash {
+  @keyframes datasette-acl-share-flash {
     0%,
     40% {
       background: #fff8c5;
@@ -1479,21 +1479,21 @@
   }
 
   /* --- general access ---------------------------------------------------- */
-  .datasette-share-dialog__general-row {
+  .datasette-acl-share-dialog__general-row {
     display: flex;
     align-items: center;
     gap: 0.625rem;
     padding: 0.4375rem 0;
   }
-  .datasette-share-dialog__general-row
-    .datasette-share-dialog__avatar--initials {
+  .datasette-acl-share-dialog__general-row
+    .datasette-acl-share-dialog__avatar--initials {
     position: static;
     inset: auto;
     z-index: auto;
     flex: 0 0 auto;
     font-size: 0.875rem;
   }
-  .datasette-share-dialog__general-text {
+  .datasette-acl-share-dialog__general-text {
     flex: 1 1 auto;
     min-width: 0;
     display: flex;
@@ -1501,7 +1501,7 @@
     line-height: 1.3;
     gap: 0.125rem;
   }
-  .datasette-share-dialog__general-principal {
+  .datasette-acl-share-dialog__general-principal {
     font-size: 0.875rem;
     padding: 0.25rem 0.375rem;
     border: 1px solid #d0d7de;

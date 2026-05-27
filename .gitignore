@@ -16,5 +16,5 @@ node_modules/
 
 # Built frontend assets — built from source (matches sibling plugins, which
 # gitignore their build output). Run `just frontend` to regenerate.
-datasette_share/static/
-datasette_share/manifest.json
+datasette_acl_share/static/
+datasette_acl_share/manifest.json

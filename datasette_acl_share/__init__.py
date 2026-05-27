@@ -1,4 +1,4 @@
-"""datasette-share — the reusable ``<datasette-share-dialog>`` share dialog.
+"""datasette-acl-share — the reusable ``<datasette-acl-share-dialog>`` share dialog.
 
 This module is the Python side of the plugin. It ships:
 
@@ -31,9 +31,9 @@ from datasette_vite import vite_js_urls, vite_css_urls
 
 # The Vite manifest key for the bundle entrypoint (see frontend/vite.config.ts:
 # rollupOptions.input.main -> "src/main.ts"). Importing it registers the
-# <datasette-share-dialog> custom element.
+# <datasette-acl-share-dialog> custom element.
 ENTRYPOINT = "src/main.ts"
-PLUGIN_PACKAGE = "datasette_share"
+PLUGIN_PACKAGE = "datasette_acl_share"
 
 # Distribution names of the optional backends that light up dialog features.
 PROFILES_PLUGIN = "datasette-user-profiles"
@@ -46,19 +46,19 @@ def datasette_share_assets(datasette):
     Returns a dict with two keys suitable for Datasette's asset hooks::
 
         {
-          "js":  [{"url": "/-/static-plugins/datasette_share/gen/main-….js",
+          "js":  [{"url": "/-/static-plugins/datasette_acl_share/gen/main-….js",
                    "module": True}],
-          "css": ["/-/static-plugins/datasette_share/gen/main-….css", …],
+          "css": ["/-/static-plugins/datasette_acl_share/gen/main-….css", …],
         }
 
     A host plugin includes the bundle *only on its own pages* by returning these
     from its own ``extra_js_urls`` / ``extra_css_urls`` hooks (gated on the
-    relevant page), instead of datasette-share registering a site-wide
+    relevant page), instead of datasette-acl-share registering a site-wide
     ``extra_js_urls`` — keeping the dialog off every other Datasette page
     (decision: plan §7, opt-in by default).
 
     In datasette-vite dev mode (``plugins.datasette-vite.dev_paths`` /
-    ``dev_ports`` keyed on ``datasette_share``) the ``js`` list includes the Vite
+    ``dev_ports`` keyed on ``datasette_acl_share``) the ``js`` list includes the Vite
     client and points at the dev server; ``css`` is ``[]`` (Vite injects CSS via
     JS). Both behaviours come straight from datasette-vite.
     """

@@ -6,10 +6,10 @@ const DEV_PORT = 5180;
 
 export default defineConfig({
   plugins: [svelte()],
-  base: "/-/static-plugins/datasette_share/",
+  base: "/-/static-plugins/datasette_acl_share/",
   build: {
     target: "esnext",
-    outDir: path.resolve(__dirname, "../datasette_share"),
+    outDir: path.resolve(__dirname, "../datasette_acl_share"),
     assetsDir: "static/gen",
     emptyOutDir: false,
     manifest: "manifest.json",

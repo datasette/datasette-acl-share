@@ -1,5 +1,5 @@
 {
-  "name": "datasette-share-frontend",
+  "name": "datasette-acl-share-frontend",
   "private": true,
   "version": "0.0.0",
   "type": "module",

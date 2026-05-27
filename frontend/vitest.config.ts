@@ -4,7 +4,7 @@ import { svelte } from "@sveltejs/vite-plugin-svelte";
 // Two test projects:
 //   node     — fast unit tests for the framework-agnostic helpers (the API
 //              client + pure grant/avatar helpers). Injectable fetch, no DOM.
-//   browser  — component tests for <datasette-share-dialog>, run in a real
+//   browser  — component tests for <datasette-acl-share-dialog>, run in a real
 //              browser (Playwright/chromium) via vitest-browser-svelte so
 //              custom-element registration, DOM events and avatar <img>
 //              onerror fallbacks behave exactly as in production.
