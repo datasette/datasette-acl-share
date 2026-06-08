@@ -2,11 +2,14 @@ import { defineConfig } from "vite";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import path from "path";
 
-const DEV_PORT = 5180;
+// Dev-server port. Owned by the justfile (`DEV_PORT` var) and passed in via
+// env so the number lives in one place; falls back to 5180 for a bare
+// `npm run dev`. Only the dev server uses it (`build` ignores `server`).
+const DEV_PORT = Number(process.env.DEV_PORT) || 5180;
 
 export default defineConfig({
   plugins: [svelte()],
-  base: "/-/static-plugins/datasette_acl_share/",
+  base: "/",
   build: {
     target: "esnext",
     outDir: path.resolve(__dirname, "../datasette_acl_share"),

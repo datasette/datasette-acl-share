@@ -7,8 +7,12 @@
 #   just frontend          # builds into datasette_acl_share/static/gen + manifest.json
 #
 # Live HMR workflow (two terminals):
-#   Terminal 1:  just frontend-dev    # vite dev server on :5180
+#   Terminal 1:  just frontend-dev    # vite dev server on $DEV_PORT
 #   Terminal 2:  just dev-with-hmr    # datasette pointed at the vite dev server
+
+# Single source of truth for the vite dev-server port. Consumed by both the
+# vite config (via the DEV_PORT env var) and datasette-vite's dev_ports setting.
+DEV_PORT := "5180"
 
 frontend-install:
   npm --prefix frontend install
@@ -17,7 +21,7 @@ frontend:
   npm --prefix frontend run build
 
 frontend-dev:
-  npm --prefix frontend run dev
+  DEV_PORT={{DEV_PORT}} npm --prefix frontend run dev
 
 check-frontend:
   npm --prefix frontend run check
@@ -40,7 +44,7 @@ dev-with-hmr *flags:
     --with 'datasette>=1a' \
     datasette \
     --root \
-    -s plugins.datasette-vite.dev_paths.datasette_acl_share 'http://localhost:5180/-/static-plugins/datasette_acl_share/' \
+    -s plugins.datasette-vite.dev_ports.datasette_acl_share {{DEV_PORT}} \
     tmp.db --create \
     -p 5171 \
     --internal internal.db \
