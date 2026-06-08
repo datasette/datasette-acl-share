@@ -222,6 +222,32 @@ def _owner_name(owner_id):
     return GOTHAM_ACTORS.get(owner_id, {}).get("name", owner_id)
 
 
+async def highest_role_for_actor(datasette, doc, actor):
+    """The current actor's highest role on a doc, for display in the index.
+
+    Returns ``"Owner"`` when the actor owns the doc, otherwise the highest acl
+    role they hold (``"Manager"`` / ``"Editor"`` / ``"Viewer"``), or ``None``
+    when they have no access at all. The role is resolved the same way acl does
+    it: collect the actions the actor is ``allowed`` on this resource, then map
+    that action set to the best-fit role via ``role_for_actions``.
+    """
+    if actor and actor.get("id") == doc["owner"]:
+        return "Owner"
+    from datasette_acl.roles import roles_for, role_for_actions
+
+    roles = roles_for(datasette, "sample-doc")
+    granted = set()
+    for action in {a for role in roles for a in role.actions}:
+        if await datasette.allowed(
+            action=action,
+            resource=SampleDocResource(doc["id"]),
+            actor=actor,
+        ):
+            granted.add(action)
+    role = role_for_actions(roles, granted)
+    return role.name if role else None
+
+
 # --- acl hooks -------------------------------------------------------------
 
 
@@ -401,16 +427,19 @@ def homepage_actions(datasette, actor, request):
 
 async def index_page(request, datasette):
     await _ensure_seed_grants(datasette)
-    # Only list documents the current actor may view (same gate as the doc
-    # page), so the index reflects acl sharing rather than every document.
+    # Only list documents the current actor may view, and tag each with the
+    # role they hold so the index reflects acl sharing. `highest_role_for_actor`
+    # returns None when the actor has no access — the lowest role (Viewer)
+    # already implies the `sample-doc-view` action, so a non-None role is the
+    # view gate.
     documents = []
     for doc in DOCUMENTS:
-        if await datasette.allowed(
-            action="sample-doc-view",
-            resource=SampleDocResource(doc["id"]),
-            actor=request.actor,
-        ):
-            documents.append({**doc, "owner_name": _owner_name(doc["owner"])})
+        role = await highest_role_for_actor(datasette, doc, request.actor)
+        if role is None:
+            continue
+        documents.append(
+            {**doc, "owner_name": _owner_name(doc["owner"]), "role": role}
+        )
     return Response.html(
         await datasette.render_template(
             "sample_docs_index.html", {"documents": documents}, request=request
