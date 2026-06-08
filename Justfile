@@ -26,26 +26,19 @@ frontend-dev:
 check-frontend:
   npm --prefix frontend run check
 
-dev:
+dev *flags:
   DATASETTE_SECRET=abc123 uv run \
     --prerelease=allow \
     --with-editable . \
     --with 'datasette>=1a' \
     datasette \
     --root \
-    tmp.db --create \
-    -p 5171 \
-    --internal internal.db
-
-dev-with-hmr *flags:
-  DATASETTE_SECRET=abc123 uv run \
-    --prerelease=allow \
-    --with-editable . \
-    --with 'datasette>=1a' \
-    datasette \
-    --root \
-    -s plugins.datasette-vite.dev_ports.datasette_acl_share {{DEV_PORT}} \
     tmp.db --create \
     -p 5171 \
     --internal internal.db \
     {{flags}}
+
+# Same as `dev`, but points datasette-vite at the running vite dev server
+# (run `just frontend-dev` in another terminal first).
+dev-with-hmr *flags:
+  just dev -s plugins.datasette-vite.dev_ports.datasette_acl_share {{DEV_PORT}} {{flags}}
