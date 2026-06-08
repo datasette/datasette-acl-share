@@ -92,8 +92,16 @@ unresolved `datasette_debug_gotham`) — these are runtime-correct noise, not ga
 A dev-only plugin that gives the dialog a real resource:
 - Registers acl resource type `sample-doc` (parent-only; `parent` = doc id) with
   Viewer/Editor/Manager roles via `register_actions` + `datasette_acl_roles`.
-- Seeds 3 documents owned by gotham characters (clark=1, bruce=2, selina=3);
-  each owner gets a Manager grant (seeded lazily on first request).
+- Seeds 8 documents owned by gotham characters; each owner gets a Manager grant,
+  plus some docs carry preseeded `shares` so the dialog opens onto a realistic
+  roster (seeded lazily on first request via `_ensure_seed_grants`). A `shares`
+  entry is `{role + one of actor|group}`; group names resolve to ids (newsroom
+  dynamic-groups). The seeded access shapes:
+  - 1–3 owner-only (clark / bruce / selina)
+  - 4 daily-planet group (Editor) · 5 gotham-gazette group (Viewer)
+  - 6 crossover — both newsrooms (DP Editor + GG Viewer)
+  - 7 named people only — clark + lois (Lois individually, *not* her newsroom)
+  - 8 public — `_signed_in` Viewer (any logged-in actor, not anon)
 - `/sample-docs` (index) and `/sample-docs/<id>` (one doc, embeds the dialog).
   **Both gate on the `sample-doc-view` acl action** via `datasette.allowed`, so
   viewing reflects sharing: the index lists only docs you can view, and a doc
@@ -103,8 +111,19 @@ Switch actors with the **debug bar** (gotham, via datasette-debug-bar) — it se
 the `actor` cookie. user-profiles (seeded by gotham) gives names/avatars/search;
 `-s permissions.profile_access.id '*'` in `just dev` lets actors use the picker.
 
+**Newsroom groups.** Gotham actors carry a `newsroom` attribute (`daily-planet` =
+clark/lois/jimmy, `gotham-gazette` = bruce/alfred/selina). Gotham itself has no
+acl code — `just dev` turns these into acl **dynamic groups** via config:
+`-s plugins.datasette-acl.dynamic-groups.<name>.newsroom <name>`. acl pre-creates
+the `acl_groups` rows at startup and recomputes membership per-actor from the
+attribute, so both newsrooms show up in the dialog's **Groups** picker and are
+grantable — no manual roster. (`member_count` in the groups endpoint fills in
+lazily as acl resolves each actor.) To add a new newsroom group: add another
+`dynamic-groups.<name>.newsroom <name>` flag — no plugin change needed.
+
 Demo flow: log in as Clark → open doc 1 → share Viewer with Lois → switch to
-Lois → doc 1 now appears on her index and opens.
+Lois → doc 1 now appears on her index and opens. Or share Viewer with the
+**daily-planet** group → every Daily Planet actor (lois, jimmy) inherits it.
 
 ## Current state / what's done
 

@@ -43,6 +43,8 @@ dev *flags:
     --plugins-dir tests/sample_plugins \
     --template-dir tests/templates \
     -s permissions.profile_access.id '*' \
+    -s plugins.datasette-acl.dynamic-groups.daily-planet.newsroom daily-planet \
+    -s plugins.datasette-acl.dynamic-groups.gotham-gazette.newsroom gotham-gazette \
     tmp.db --create \
     -p 5171 \
     --internal internal.db \

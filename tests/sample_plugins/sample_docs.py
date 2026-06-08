@@ -11,7 +11,9 @@ resource to talk to:
   ``datasette_acl_roles`` exactly as a real consumer plugin would.
 - Each document's owner is granted the Manager role on it (in acl's internal
   DB), so logging in as that owner makes ``can_manage`` true and the dialog
-  renders its full editing UI.
+  renders its full editing UI. Some docs also carry preseeded ``shares`` —
+  whole-newsroom group grants, single-newsroom, cross-newsroom, named-person,
+  and signed-in-public — so the dialog opens onto a realistic roster.
 - Pages at ``/sample-docs`` (index) and ``/sample-docs/<id>`` (one doc), the
   latter embedding ``<datasette-acl-share-dialog>``. Both render through
   templates in ``tests/templates`` (loaded via ``--template-dir``) that extend
@@ -120,6 +122,98 @@ DOCUMENTS = [
             "cases go back to the vault.",
         ],
     },
+    # --- preseeded sharing scenarios ---------------------------------------
+    # Beyond the owner's Manager grant, each of these seeds extra grants via
+    # the optional "shares" list, exercising a different access shape in the
+    # dialog. Group names (daily-planet / gotham-gazette) are gotham's
+    # newsroom dynamic-groups; see CLAUDE.md.
+    {
+        # Daily Planet only: the whole daily-planet newsroom can edit.
+        "id": "4",
+        "title": "Daily Planet — Newsroom Style Guide",
+        "owner": "lois",
+        "shares": [{"group": "daily-planet", "role": "Editor"}],
+        "body": [
+            "Datelines run in small caps. Always confirm a second source before "
+            "a name appears above the fold — no exceptions, no matter the deadline.",
+            "Avoid “alleged” as a hedge; attribute the claim to whoever made it. "
+            "Photo credits go to the desk, never to an individual stringer.",
+            "Questions to the copy chief. This guide is living — propose edits in "
+            "the margins and they'll be folded in each Friday.",
+        ],
+    },
+    {
+        # Gotham Gazette only: the gotham-gazette newsroom can read it.
+        "id": "5",
+        "title": "Gotham Gazette — Crime Desk Briefing",
+        "owner": "alfred",
+        "shares": [{"group": "gotham-gazette", "role": "Viewer"}],
+        "body": [
+            "GOTHAM — Three warehouse fires along the Sprang River in a single "
+            "month have the arson unit quietly revising its “coincidence” line.",
+            "The pattern: after-hours, accelerant-assisted, and always a unit "
+            "that changed hands in the last quarter. Follow the deeds, not the "
+            "flames.",
+            "Desk assignments for the week are below. Keep the working notes off "
+            "shared drives until legal clears the corporate-records request.",
+        ],
+    },
+    {
+        # Crossover: a joint investigation both newsrooms can work on —
+        # daily-planet edits, gotham-gazette reads along.
+        "id": "6",
+        "title": "Joint Investigation — Harbor Contracts",
+        "owner": "lois",
+        "shares": [
+            {"group": "daily-planet", "role": "Editor"},
+            {"group": "gotham-gazette", "role": "Viewer"},
+        ],
+        "body": [
+            "Two cities, one shipping consortium, and a string of no-bid harbor "
+            "contracts that surface in both Hobbs Bay and the Sprang River "
+            "redevelopment. The Planet and the Gazette are pooling files.",
+            "Shared timeline and the FOIA tracker live in this doc. Metropolis "
+            "owns the seawall-contractor thread; Gotham owns the shell-company "
+            "ownership map.",
+            "Weekly sync Thursdays. Nothing publishes until both desks sign off "
+            "— this is a coordinated drop, not a race.",
+        ],
+    },
+    {
+        # Two named people only: shared with Lois individually, NOT the whole
+        # newsroom — so Jimmy (also daily-planet) can't see it.
+        "id": "7",
+        "title": "Confidential Source Notes — Hobbs Bay",
+        "owner": "clark",
+        "shares": [{"actor": "lois", "role": "Editor"}],
+        "body": [
+            "Source “Tideline” will only meet at the old ferry terminal, never by "
+            "phone. Says the seawall sign-off skipped an inspection — has the "
+            "paperwork to prove it but won't hand it over yet.",
+            "Do not put the real name in any shared file. Lois has the contact "
+            "sheet; nobody else on the desk gets it until we've corroborated.",
+            "If this leaks before we're ready, the source walks and we lose the "
+            "whole harbor thread.",
+        ],
+    },
+    {
+        # Public to anyone signed in: a press release. Uses the wildcard
+        # `_signed_in` principal rather than a specific actor or group.
+        "id": "8",
+        "title": "Press Release — Hobbs Bay Seawall Reopening",
+        "owner": "jimmy",
+        "shares": [{"actor": "_signed_in", "role": "Viewer"}],
+        "body": [
+            "FOR IMMEDIATE RELEASE — The Hobbs Bay promenade reopens Saturday "
+            "following overnight repairs that held through this week's storm "
+            "surge, the city engineer's office announced.",
+            "A ribbon-cutting is scheduled for 10 a.m. at the waterfront "
+            "pavilion. Officials will take questions from credentialed press "
+            "afterward.",
+            "Media contact and high-resolution images are available on request. "
+            "This release may be reproduced in full.",
+        ],
+    },
 ]
 _DOCS_BY_ID = {doc["id"]: doc for doc in DOCUMENTS}
 
@@ -204,18 +298,39 @@ def startup(datasette):
     return inner
 
 
-async def _ensure_owner_grants(datasette):
-    """Grant each document's owner the Manager role on it (idempotent).
+async def _resolve_group_id(db, name):
+    """Look up a group's id by name, creating the group row if it's missing.
+
+    The newsroom groups normally exist already (acl creates them at startup
+    from the ``dynamic-groups`` config), but create-if-absent keeps seeding
+    robust even if that config isn't set — the grant lands either way, and
+    membership lights up once the config is present.
+    """
+    await db.execute_write(
+        "INSERT OR IGNORE INTO acl_groups (name) VALUES (?)", [name]
+    )
+    return (
+        await db.execute("SELECT id FROM acl_groups WHERE name = ?", [name])
+    ).single_value()
+
+
+async def _ensure_seed_grants(datasette):
+    """Seed each document's owner Manager grant plus any preseeded ``shares``.
 
     Done lazily on first request rather than in ``startup`` because it writes
     through acl's grant helper, which needs acl's own startup migrations to have
     already created the internal tables — and cross-plugin startup order isn't
     guaranteed.
+
+    A doc's optional ``shares`` list holds dicts with a ``role`` plus exactly one
+    of ``actor`` (an actor id, or a wildcard like ``_signed_in`` / ``*``) or
+    ``group`` (a group name, resolved to its id).
     """
     if getattr(datasette, "_sample_docs_seeded", False):
         return
     from datasette_acl.grants import grant
 
+    db = datasette.get_internal_database()
     for doc in DOCUMENTS:
         await grant(
             datasette,
@@ -223,8 +338,28 @@ async def _ensure_owner_grants(datasette):
             doc["id"],
             actor_id=doc["owner"],
             role="Manager",
-            by_actor="sample-docs-startup",
+            by_actor="sample-docs-seed",
         )
+        for share in doc.get("shares", []):
+            if "group" in share:
+                group_id = await _resolve_group_id(db, share["group"])
+                await grant(
+                    datasette,
+                    "sample-doc",
+                    doc["id"],
+                    group_id=group_id,
+                    role=share["role"],
+                    by_actor="sample-docs-seed",
+                )
+            else:
+                await grant(
+                    datasette,
+                    "sample-doc",
+                    doc["id"],
+                    actor_id=share["actor"],
+                    role=share["role"],
+                    by_actor="sample-docs-seed",
+                )
     datasette._sample_docs_seeded = True
 
 
@@ -265,7 +400,7 @@ def homepage_actions(datasette, actor, request):
 
 
 async def index_page(request, datasette):
-    await _ensure_owner_grants(datasette)
+    await _ensure_seed_grants(datasette)
     # Only list documents the current actor may view (same gate as the doc
     # page), so the index reflects acl sharing rather than every document.
     documents = []
@@ -284,7 +419,7 @@ async def index_page(request, datasette):
 
 
 async def doc_page(request, datasette):
-    await _ensure_owner_grants(datasette)
+    await _ensure_seed_grants(datasette)
     doc = _DOCS_BY_ID.get(request.url_vars["doc_id"])
     if doc is None:
         return Response.html("Not found", status=404)
