@@ -9,6 +9,10 @@
 # Live HMR workflow (two terminals):
 #   Terminal 1:  just frontend-dev    # vite dev server on $DEV_PORT
 #   Terminal 2:  just dev-with-hmr    # datasette pointed at the vite dev server
+#
+# `just dev` loads a sample plugin (tests/sample_plugins) + datasette-debug-gotham
+# + datasette-user-profiles. Visit http://localhost:5171/sample-docs, "log in" as
+# a character (Clark owns doc 1), open a doc, and exercise the share dialog.
 
 # Single source of truth for the vite dev-server port. Consumed by both the
 # vite config (via the DEV_PORT env var) and datasette-vite's dev_ports setting.
@@ -30,9 +34,15 @@ dev *flags:
   DATASETTE_SECRET=abc123 uv run \
     --prerelease=allow \
     --with-editable . \
+    --with-editable ../datasette-debug-gotham \
+    --with-editable ../datasette-user-profiles \
+    --with-editable ../datasette-debug-bar \
     --with 'datasette>=1a' \
     datasette \
     --root \
+    --plugins-dir tests/sample_plugins \
+    --template-dir tests/templates \
+    -s permissions.profile_access.id '*' \
     tmp.db --create \
     -p 5171 \
     --internal internal.db \
