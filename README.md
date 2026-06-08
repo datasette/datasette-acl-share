@@ -54,6 +54,7 @@ fetch — grant / update / revoke — matching Google Docs' incremental behaviou
 | `api-base` | – | override the acl API prefix (default `/-/acl/api`) |
 | `open` | – | when set (any value other than `false`), open the modal on mount instead of waiting for a trigger click |
 | `trigger-label` | – | text shown next to the share icon on the trigger button (icon-only if omitted) |
+| `disabled` | – | when set (any value other than `false`), disable the trigger so the dialog can't open (e.g. the actor can't share this resource) |
 
 ### Events
 
@@ -179,6 +180,10 @@ tag into a template, wiring events with `addEventListener`:
 
 A Preact host (datasette-comments) embeds the same tag unchanged — the Svelte
 custom element is framework-agnostic.
+
+> For a full walkthrough — modelling the acl resource type / actions / roles,
+> seeding grants, gating pages, plus web-component tips and a minimal end-to-end
+> plugin — see [`docs/integration-guide.md`](docs/integration-guide.md).
 
 ## Graceful degradation
 

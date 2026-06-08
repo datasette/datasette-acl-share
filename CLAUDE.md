@@ -33,6 +33,7 @@ frontend/src/lib/                 pure helpers: api.ts (typed fetch client), typ
 tests/test_share.py               Python tests (asset helper + capability probe)
 tests/sample_plugins/sample_docs.py   throwaway demo plugin (NOT packaged; --plugins-dir)
 tests/templates/                  demo page templates (--template-dir; extend base.html)
+docs/integration-guide.md         how host plugins embed the dialog (source-controlled)
 ```
 
 The Python side ships assets **opt-in**: a host plugin calls
@@ -102,10 +103,14 @@ A dev-only plugin that gives the dialog a real resource:
   - 6 crossover — both newsrooms (DP Editor + GG Viewer)
   - 7 named people only — clark + lois (Lois individually, *not* her newsroom)
   - 8 public — `_signed_in` Viewer (any logged-in actor, not anon)
+  Owners are spread across the cast (clark & lois own two each; bruce, selina,
+  alfred, jimmy one each) — not everything is clark's.
 - `/sample-docs` (index) and `/sample-docs/<id>` (one doc, embeds the dialog).
   **Both gate on the `sample-doc-view` acl action** via `datasette.allowed`, so
-  viewing reflects sharing: the index lists only docs you can view, and a doc
-  page 403s without a grant. The share trigger is `disabled` unless you own the doc.
+  viewing reflects sharing: the index lists only docs you can view — each tagged
+  with *your* highest role on it (Owner / Manager / Editor / Viewer, via
+  `highest_role_for_actor` → acl's `role_for_actions`) — and a doc page 403s
+  without a grant. The share trigger is `disabled` unless you own the doc.
 
 Switch actors with the **debug bar** (gotham, via datasette-debug-bar) — it sets
 the `actor` cookie. user-profiles (seeded by gotham) gives names/avatars/search;
@@ -131,7 +136,10 @@ Lois → doc 1 now appears on her index and opens. Or share Viewer with the
 - Component is a modal-with-trigger (was inline), with `open`/`trigger-label`/
   `disabled`. Lazy load on open.
 - Agent picker feature **removed** (see below).
-- Sample-docs demo with real acl gating end-to-end.
+- Sample-docs demo with real acl gating end-to-end: 8 docs across preseeded
+  sharing shapes, gotham newsrooms wired as acl dynamic groups, and an index
+  that shows each actor's role.
+- Plugin-author integration guide at `docs/integration-guide.md`.
 - All suites green: frontend check (0 errors), vitest, pytest.
 
 ## What's left / deferred
