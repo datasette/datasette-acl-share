@@ -12,7 +12,7 @@ import type { Actor, Grant } from "./types";
  * quiet. The returned function also exposes `.cancel()` to drop a pending run
  * (e.g. when the tab changes or the box closes).
  *
- * Kept generic so the Agents tab can reuse it.
+ * Kept generic so other pickers can reuse it.
  */
 export interface Debounced<A extends unknown[]> {
   (...args: A): void;
@@ -40,7 +40,7 @@ export function debounce<A extends unknown[]>(
   return wrapped;
 }
 
-/** Default debounce window for the people/agents type-ahead, in ms. */
+/** Default debounce window for the people type-ahead, in ms. */
 export const SEARCH_DEBOUNCE_MS = 200;
 
 /**

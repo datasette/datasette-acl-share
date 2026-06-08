@@ -1,9 +1,8 @@
 // Typed fetch client for the share dialog.
 //
-// Targets three backends:
+// Targets two backends:
 //   acl       /-/acl/api/...        grants, groups, actors (the grant store)
 //   profiles  /-/profiles/api/...   people search (avatars / display names)
-//   agent     /-/agent/api/...      agent identities (phase-07; optional)
 //
 // CSRF (datasette 1.0a30): core replaced token-based asgi-csrf with the
 // header-based CrossOriginProtectionMiddleware (Sec-Fetch-Site + Origin). A
@@ -25,11 +24,10 @@ import type {
 } from "./types";
 
 /** Default API prefixes. The acl base is overridable via the component's
- * `api-base` attribute; profiles/agent are derived from sibling Datasette
- * route conventions and are not commonly overridden. */
+ * `api-base` attribute; profiles is derived from sibling Datasette route
+ * conventions and is not commonly overridden. */
 export const DEFAULT_ACL_BASE = "/-/acl/api";
 export const DEFAULT_PROFILES_BASE = "/-/profiles/api";
-export const DEFAULT_AGENT_BASE = "/-/agent/api";
 
 /**
  * The resource the dialog is sharing. Threaded into the picker calls so the
@@ -47,8 +45,6 @@ export interface ShareApiOptions {
   aclBase?: string;
   /** profiles API prefix (default `/-/profiles/api`). */
   profilesBase?: string;
-  /** agent API prefix (default `/-/agent/api`). */
-  agentBase?: string;
   /** CSRF token to forward on writes (optional under 1.0a30). */
   csrftoken?: string;
   /** The dialog's resource, threaded onto picker calls for per-resource authz. */
@@ -102,7 +98,6 @@ function withQuery(path: string, params: Record<string, string | undefined>): st
 export class ShareApi {
   private readonly aclBase: string;
   private readonly profilesBase: string;
-  private readonly agentBase: string;
   private readonly csrftoken?: string;
   private readonly resource?: ShareResource;
   private readonly fetchImpl: typeof fetch;
@@ -110,7 +105,6 @@ export class ShareApi {
   constructor(options: ShareApiOptions = {}) {
     this.aclBase = options.aclBase || DEFAULT_ACL_BASE;
     this.profilesBase = options.profilesBase || DEFAULT_PROFILES_BASE;
-    this.agentBase = options.agentBase || DEFAULT_AGENT_BASE;
     this.csrftoken = options.csrftoken;
     this.resource = options.resource;
     // Bind so callers passing `globalThis.fetch` keep the right `this`.
@@ -285,16 +279,6 @@ export class ShareApi {
     return res.results ?? [];
   }
 
-  /** GET /-/agent/api/identities?q= → agent picker (phase-07; may 404). */
-  async listAgents(q: string): Promise<Actor[]> {
-    const url = withQuery(joinPath(this.agentBase, "identities"), {
-      q,
-      ...this.resourceParams(),
-    });
-    const res = await this.getJson<{ results: Actor[] }>(url);
-    return res.results ?? [];
-  }
-
   /** GET /-/acl/api/groups → the group picker. Carries the dialog's resource
    * so per-resource Managers (no global admin) are authorized. */
   async listGroups(): Promise<Group[]> {
@@ -318,11 +302,8 @@ export class ShareApi {
    * `features` attribute — it's cheaper (no network round-trips).
    */
   async probeCapabilities(): Promise<Capabilities> {
-    const [people, agents] = await Promise.all([
-      this.probe(() => this.searchPeople("")),
-      this.probe(() => this.listAgents("")),
-    ]);
-    return { people, agents, groups: true, public: true };
+    const people = await this.probe(() => this.searchPeople(""));
+    return { people, groups: true, public: true };
   }
 
   private async probe(fn: () => Promise<unknown>): Promise<boolean> {
@@ -341,13 +322,13 @@ export class ShareApi {
 
 /**
  * Build {@link Capabilities} from a host-supplied `features` attribute
- * (comma-separated, e.g. "people,groups,agents,public"). Cheaper than probing.
+ * (comma-separated, e.g. "people,groups,public"). Cheaper than probing.
  * An empty / missing string enables everything (the dialog's documented
  * default of "all available").
  */
 export function capabilitiesFromFeatures(features?: string | null): Capabilities {
   if (features == null || features.trim() === "") {
-    return { people: true, agents: true, groups: true, public: true };
+    return { people: true, groups: true, public: true };
   }
   const set = new Set(
     features
@@ -357,7 +338,6 @@ export function capabilitiesFromFeatures(features?: string | null): Capabilities
   );
   return {
     people: set.has("people"),
-    agents: set.has("agents"),
     groups: set.has("groups"),
     public: set.has("public"),
   };

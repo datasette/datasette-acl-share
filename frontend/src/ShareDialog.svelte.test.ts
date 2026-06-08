@@ -535,22 +535,25 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
   });
 
-  it("hides the Agents tab when the agents capability is absent", async () => {
+  it("hides the Groups tab when the groups capability is absent", async () => {
+    on("/resource/", () => json(STATE));
+    mount({ ...BASE_ATTRS, features: "people,public" });
+    // Wait for load, then assert the groups tab isn't present (only People
+    // remains, so the tablist collapses to a single picker).
+    await expect.element(page.getByText("Bob Editor")).toBeInTheDocument();
+    expect(
+      document.querySelector("[role='tab'][id='datasette-acl-share-tab-groups']"),
+    ).toBeNull();
+  });
+
+  it("shows People and Groups tabs when both capabilities are present", async () => {
     on("/resource/", () => json(STATE));
     mount({ ...BASE_ATTRS, features: "people,groups,public" });
     await expect
       .element(page.getByRole("tab", { name: "People" }))
       .toBeInTheDocument();
-    expect(
-      document.querySelector("[role='tab'][id='datasette-acl-share-tab-agents']"),
-    ).toBeNull();
-  });
-
-  it("shows the Agents tab when the agents capability is present", async () => {
-    on("/resource/", () => json(STATE));
-    mount({ ...BASE_ATTRS, features: "people,agents,groups,public" });
     await expect
-      .element(page.getByRole("tab", { name: "Agents" }))
+      .element(page.getByRole("tab", { name: "Groups" }))
       .toBeInTheDocument();
   });
 });

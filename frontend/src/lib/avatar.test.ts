@@ -34,9 +34,8 @@ describe("kindBadge", () => {
   it("returns null for users", () => {
     expect(kindBadge("user")).toBeNull();
   });
-  it("returns a glyph for group/agent/public", () => {
+  it("returns a glyph for group/public", () => {
     expect(kindBadge("group")).toBeTruthy();
-    expect(kindBadge("agent")).toBeTruthy();
     expect(kindBadge("public")).toBeTruthy();
   });
 });

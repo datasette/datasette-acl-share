@@ -1,5 +1,5 @@
 // Pure helpers for the add-box "pill" picker: the user selects several
-// people / agents / groups (each rendered as a removable chip) before clicking
+// people / groups (each rendered as a removable chip) before clicking
 // Share, which grants the chosen role to every selected pill at once.
 //
 // These helpers keep the (testable) list bookkeeping — add/remove/dedupe and
@@ -8,7 +8,6 @@
 
 import type { Actor, ActorKind, Grant, GrantRequest, Group, Principal } from "./types";
 import { actorLabel } from "./people";
-import { agentLabel, normalizeAgents } from "./agents";
 import { groupIdStr } from "./groups";
 
 /**
@@ -23,7 +22,7 @@ export interface Pill {
   id: string;
   /** The chip label (display name → email → id). */
   label: string;
-  /** Principal kind, for the avatar badge (user / agent / group). */
+  /** Principal kind, for the avatar badge (user / group). */
   kind: ActorKind;
   /** Optional avatar image url (people only). */
   avatar_url?: string;
@@ -38,18 +37,15 @@ export function pillKey(pill: Pick<Pill, "principal" | "id">): string {
   return `${pill.principal}:${pill.id}`;
 }
 
-/** Build a pill from an actor (person or agent) search hit. */
+/** Build a pill from a person search hit. */
 export function pillFromActor(actor: Actor): Pill {
-  const isAgent = actor.kind === "agent";
-  const [normalized] = isAgent ? normalizeAgents([actor]) : [actor];
-  const a = normalized!;
   return {
     principal: "actor",
-    id: a.id,
-    label: isAgent ? agentLabel(a) : actorLabel(a),
-    kind: a.kind,
-    ...(a.avatar_url ? { avatar_url: a.avatar_url } : {}),
-    ...(!isAgent && a.email ? { email: a.email } : {}),
+    id: actor.id,
+    label: actorLabel(actor),
+    kind: actor.kind,
+    ...(actor.avatar_url ? { avatar_url: actor.avatar_url } : {}),
+    ...(actor.email ? { email: actor.email } : {}),
   };
 }
 

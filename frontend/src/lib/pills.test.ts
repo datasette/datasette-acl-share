@@ -49,15 +49,6 @@ describe("pillFromActor", () => {
     });
   });
 
-  it("normalizes agents to kind:agent and uses the agent label", () => {
-    const agent: Actor = { id: "agent-1", display_name: "Helper", kind: "user" };
-    const pill = pillFromActor({ ...agent, kind: "agent" });
-    expect(pill.kind).toBe("agent");
-    expect(pill.label).toBe("Helper");
-    // No avatar_url key when absent.
-    expect("avatar_url" in pill).toBe(false);
-  });
-
   it("falls back to email then id for the label", () => {
     expect(pillFromActor({ id: "x", email: "x@y.com", kind: "user" }).label).toBe(
       "x@y.com",

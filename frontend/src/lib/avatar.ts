@@ -1,7 +1,7 @@
 // Avatar helpers for the share dialog.
 //
 // profiles returns an avatar image URL per actor, but it 404s when a person
-// has no picture (and agents/groups/public never have one). The dialog renders
+// has no picture (and groups/public never have one). The dialog renders
 // an <img> and falls back to a coloured initials chip on error / when no URL is
 // available. These pure helpers compute the fallback so they're testable
 // without a DOM.
@@ -65,8 +65,6 @@ export function kindBadge(kind: ActorKind): string | null {
   switch (kind) {
     case "group":
       return "\u{1F465}"; // 👥
-    case "agent":
-      return "\u{1F916}"; // 🤖
     case "public":
       return "\u{1F310}"; // 🌐
     default:

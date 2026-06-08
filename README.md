@@ -4,16 +4,15 @@ A reusable, Google-Docs-style **share dialog** for Datasette, shipped as a
 framework-agnostic Svelte 5 custom element: `<datasette-acl-share-dialog>`.
 
 One component, embedded by every document plugin (paper, places, sheets, …). It
-orchestrates three backends so consumers write almost no sharing code:
+orchestrates two backends so consumers write almost no sharing code:
 
 | Concern | Backend |
 |---|---|
 | read/write grants, roles, groups | [datasette-acl](https://github.com/datasette/datasette-acl) |
 | search people, render avatars | datasette-user-profiles |
-| list / share-with agents | [datasette-agent](https://github.com/datasette/datasette-agent) |
 
-The dialog degrades gracefully: no profiles → no avatars/search; no agent → no
-agents tab.
+The dialog degrades gracefully: no profiles → no avatars/search (initials chips
+and no People search).
 
 ## Usage
 
@@ -38,7 +37,7 @@ to show text beside the icon.
 Once open, the dialog calls the [datasette-acl](https://github.com/datasette/datasette-acl)
 JSON API to render "people with access" (avatars, role dropdowns, remove
 buttons) and a "General access" section, with an add-box that searches people
-(profiles), agents (datasette-agent) and groups (acl). Each action is its own
+(profiles) and groups (acl). Each action is its own
 fetch — grant / update / revoke — matching Google Docs' incremental behaviour.
 
 ### Attributes
@@ -51,7 +50,7 @@ fetch — grant / update / revoke — matching Google Docs' incremental behaviou
 | `resource-label` | – | display title shown in the dialog header |
 | `actor-json` | – | current actor as JSON (`{"id":"alice","kind":"user"}`) — used to mark "(you)" |
 | `csrftoken` | – | forwarded as `x-csrftoken` on writes; optional under datasette 1.0a30 (see [CSRF](#csrf)) |
-| `features` | – | comma list of sections to show (`people,agents,groups,public`); empty/missing = all available |
+| `features` | – | comma list of sections to show (`people,groups,public`); empty/missing = all available |
 | `api-base` | – | override the acl API prefix (default `/-/acl/api`) |
 | `open` | – | when set (any value other than `false`), open the modal on mount instead of waiting for a trigger click |
 | `trigger-label` | – | text shown next to the share icon on the trigger button (icon-only if omitted) |
@@ -114,11 +113,10 @@ So a host can set `features` without guessing which optional backends exist,
 the plugin exposes `GET /-/share/capabilities`:
 
 ```json
-{"people": true, "agents": false, "groups": true, "public": true}
+{"people": true, "groups": true, "public": true}
 ```
 
 - `people` — [datasette-user-profiles](https://github.com/datasette/datasette-user-profiles) installed (search + avatars)
-- `agents` — [datasette-agent](https://github.com/datasette/datasette-agent) installed (agent identities tab)
 - `groups`, `public` — intrinsic to datasette-acl, always `true`
 
 `share_capabilities(datasette)` is also importable if you prefer to compute the
@@ -189,8 +187,6 @@ The dialog adapts to whichever backends are installed:
 - **No datasette-user-profiles** → no people search and no avatars; grant rows
   fall back to initials chips and the People tab is hidden (capability probe
   reports `people: false`).
-- **No datasette-agent** → the Agents tab is hidden (`agents: false`); the agent
-  identities endpoint 404 is treated as "feature off", not an error.
 - **Groups / General access** are intrinsic to datasette-acl and always
   available.
 - When the current actor cannot manage a resource (`can_manage: false`), the

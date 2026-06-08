@@ -1,15 +1,13 @@
 // Types mirroring the datasette-acl JSON API (branch acl/7-json-api; see its
-// docs/json-api.md), the datasette-user-profiles search API, and the (phase-07)
-// datasette-agent identities API. These shapes are what the share dialog
-// component consumes.
+// docs/json-api.md) and the datasette-user-profiles search API. These shapes
+// are what the share dialog component consumes.
 //
 // Sources:
 //   acl       datasette_acl/views/api.py  (resource_grants_json / *_json)
 //   profiles  datasette_user_profiles/routes/api.py  (api_search → SearchResult)
-//   agent     /-/agent/api/identities  (phase-07; degrades to 404 → disabled)
 
 /** Which kind of principal a grant or search hit refers to. */
-export type ActorKind = "user" | "agent" | "group" | "public";
+export type ActorKind = "user" | "group" | "public";
 
 /** A grant principal is either a specific actor, a group, or (for wildcard
  * "general access" rows) still stored as an actor principal with a wildcard id. */
@@ -50,9 +48,9 @@ export interface Grant {
   role: string | null;
   /** The raw granted action-set (sorted). */
   actions: string[];
-  /** "user" | "agent" | "group" | "public". */
+  /** "user" | "group" | "public". */
   kind: ActorKind;
-  /** Enrichment (profiles / agents); absent when unavailable. */
+  /** Enrichment (profiles); absent when unavailable. */
   display_name?: string;
   email?: string;
   avatar_url?: string;
@@ -82,7 +80,7 @@ export interface ShareState {
 }
 
 /**
- * A search / picker hit for a person (profiles) or agent (agent plugin).
+ * A search / picker hit for a person (profiles).
  * Mirrors profiles' `SearchResult`.
  */
 export interface Actor {
@@ -133,12 +131,11 @@ export interface RevokeResponse {
 /**
  * Which optional backends are available, so the dialog can show/hide sections.
  * `groups` is part of acl itself and so is always assumed present; `people`
- * (profiles search) and `agents` (agent identities) are optional; `public`
- * (general-access wildcards) is always supported by acl.
+ * (profiles search) is optional; `public` (general-access wildcards) is always
+ * supported by acl.
  */
 export interface Capabilities {
   people: boolean;
-  agents: boolean;
   groups: boolean;
   public: boolean;
 }

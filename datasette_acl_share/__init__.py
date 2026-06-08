@@ -10,11 +10,10 @@ This module is the Python side of the plugin. It ships:
 
 - :func:`share_capabilities` + a ``GET /-/share/capabilities`` endpoint — a
   capability probe reporting which optional backends are installed
-  (``people`` → datasette-user-profiles, ``agents`` → datasette-agent). Hosts
-  can use it to set the element's ``features`` attribute without guessing.
-  ``groups`` and ``public`` are intrinsic to datasette-acl and always reported
-  true. The probe degrades gracefully: when profiles / agent are absent the
-  corresponding flag is simply ``false``.
+  (``people`` → datasette-user-profiles). Hosts can use it to set the element's
+  ``features`` attribute without guessing. ``groups`` and ``public`` are
+  intrinsic to datasette-acl and always reported true. The probe degrades
+  gracefully: when profiles is absent the ``people`` flag is simply ``false``.
 
 CSRF (datasette 1.0a30): core replaced token-based ``asgi-csrf`` with the
 header-based ``CrossOriginProtectionMiddleware`` (Sec-Fetch-Site + Origin).
@@ -35,9 +34,8 @@ from datasette_vite import vite_js_urls, vite_css_urls
 ENTRYPOINT = "src/main.ts"
 PLUGIN_PACKAGE = "datasette_acl_share"
 
-# Distribution names of the optional backends that light up dialog features.
+# Distribution name of the optional backend that lights up dialog features.
 PROFILES_PLUGIN = "datasette-user-profiles"
-AGENT_PLUGIN = "datasette-agent"
 
 
 def datasette_share_assets(datasette):
@@ -93,18 +91,17 @@ def _installed_plugin_names():
 def share_capabilities(datasette=None):
     """Report which dialog sections the installed backends can support.
 
-    ``people`` requires datasette-user-profiles (search + avatars); ``agents``
-    requires datasette-agent (agent identities). ``groups`` and ``public``
-    (general-access wildcards) are intrinsic to datasette-acl and reported true.
+    ``people`` requires datasette-user-profiles (search + avatars). ``groups``
+    and ``public`` (general-access wildcards) are intrinsic to datasette-acl and
+    reported true.
 
     Degrades gracefully: a missing optional plugin simply yields ``false`` for
-    its flag rather than raising — so a host that probes before profiles/agent
-    are installed gets a usable (people/agents-off) capability set.
+    its flag rather than raising — so a host that probes before profiles is
+    installed gets a usable (people-off) capability set.
     """
     installed = _installed_plugin_names()
     return {
         "people": PROFILES_PLUGIN in installed,
-        "agents": AGENT_PLUGIN in installed,
         "groups": True,
         "public": True,
     }

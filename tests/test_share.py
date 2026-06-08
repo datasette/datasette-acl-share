@@ -2,11 +2,10 @@
 
 Run: ``uv run pytest`` (or ``uv run --with pytest pytest``).
 
-Note on the capability probe: in this venv datasette-user-profiles and
-datasette-agent are NOT installed, so the probe must degrade gracefully and
-report ``people: false`` / ``agents: false`` while still reporting the intrinsic
-acl features (``groups`` / ``public``) true. That graceful path is exercised
-below (``test_capabilities_*``).
+Note on the capability probe: in this venv datasette-user-profiles is NOT
+installed, so the probe must degrade gracefully and report ``people: false``
+while still reporting the intrinsic acl features (``groups`` / ``public``) true.
+That graceful path is exercised below (``test_capabilities_*``).
 """
 
 import json
@@ -135,19 +134,18 @@ def test_assets_dev_mode():
 
 
 def test_capabilities_degrade_gracefully():
-    """profiles / agent are NOT installed in this venv → people/agents false,
-    groups/public (intrinsic to acl) true. Probe must not raise."""
+    """profiles is NOT installed in this venv → people false, groups/public
+    (intrinsic to acl) true. Probe must not raise."""
     caps = share_capabilities()
     assert caps == {
         "people": False,
-        "agents": False,
         "groups": True,
         "public": True,
     }
 
 
 def test_capabilities_reflect_installed_plugins(monkeypatch):
-    """When profiles + agent report installed, the corresponding flags flip."""
+    """When profiles reports installed, the people flag flips on."""
     import datasette_acl_share
 
     monkeypatch.setattr(
@@ -156,32 +154,14 @@ def test_capabilities_reflect_installed_plugins(monkeypatch):
         lambda: {
             "datasette-acl-share",
             "datasette-user-profiles",
-            "datasette-agent",
         },
     )
     caps = share_capabilities()
     assert caps == {
         "people": True,
-        "agents": True,
         "groups": True,
         "public": True,
     }
-
-
-def test_capabilities_partial(monkeypatch):
-    """profiles installed, agent absent → people true, agents false."""
-    import datasette_acl_share
-
-    monkeypatch.setattr(
-        datasette_acl_share,
-        "_installed_plugin_names",
-        lambda: {"datasette-acl-share", "datasette-user-profiles"},
-    )
-    caps = share_capabilities()
-    assert caps["people"] is True
-    assert caps["agents"] is False
-    assert caps["groups"] is True
-    assert caps["public"] is True
 
 
 @pytest.mark.asyncio
@@ -192,9 +172,8 @@ async def test_capabilities_endpoint():
     response = await datasette.client.get("/-/share/capabilities")
     assert response.status_code == 200
     data = response.json()
-    assert set(data) == {"people", "agents", "groups", "public"}
-    # profiles / agent absent here → graceful false; acl intrinsics true.
+    assert set(data) == {"people", "groups", "public"}
+    # profiles absent here → graceful false; acl intrinsics true.
     assert data["people"] is False
-    assert data["agents"] is False
     assert data["groups"] is True
     assert data["public"] is True

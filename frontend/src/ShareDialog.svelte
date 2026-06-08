@@ -20,7 +20,6 @@
     selectableRoles,
   } from "./lib/grants";
   import { debounce, filterAlreadyGranted, SEARCH_DEBOUNCE_MS } from "./lib/people";
-  import { filterAgents, normalizeAgents } from "./lib/agents";
   import {
     filterGroups,
     groupIdStr,
@@ -346,14 +345,12 @@
 
   // --- add-box picker ------------------------------------------------------
 
-  type PickerTab = "people" | "agents" | "groups";
+  type PickerTab = "people" | "groups";
 
-  // The tabs to show, in order, gated by capability. Agents is hidden when the
-  // agent backend is absent; groups when disabled by features.
+  // The tabs to show, in order, gated by capability.
   let pickerTabs = $derived.by<PickerTab[]>(() => {
     const tabs: PickerTab[] = [];
     if (caps.people) tabs.push("people");
-    if (caps.agents) tabs.push("agents");
     if (caps.groups) tabs.push("groups");
     return tabs;
   });
@@ -372,7 +369,6 @@
   let query = $state("");
   // Raw results for the current tab + query (before dedupe/filter).
   let peopleResults = $state<Actor[]>([]);
-  let agentResults = $state<Actor[]>([]);
   let groupList = $state<Group[]>([]); // groups are listed once, filtered locally
   let searching = $state(false);
   let pickerError = $state<string | null>(null);
@@ -412,11 +408,6 @@
       (a) => !hasPill(pills, { principal: "actor", id: a.id }),
     ),
   );
-  let agentOptions = $derived(
-    filterAgents(normalizeAgents(agentResults), share?.grants ?? []).filter(
-      (a) => !hasPill(pills, { principal: "actor", id: a.id }),
-    ),
-  );
   let groupOptions = $derived(
     filterGroups(groupList, share?.grants ?? [], query).filter(
       (g) => !hasPill(pills, { principal: "group", id: groupIdStr(g.id) }),
@@ -426,10 +417,7 @@
   // The active tab's options as a flat list of pills, for keyboard navigation
   // and Enter-to-pick. Order matches the rendered listbox.
   let optionPills = $derived.by<Pill[]>(() => {
-    // agentOptions are already normalized to kind:"agent" upstream, so
-    // pillFromActor builds agent pills correctly without re-tagging.
     if (activeTab === "people") return peopleOptions.map(pillFromActor);
-    if (activeTab === "agents") return agentOptions.map(pillFromActor);
     if (activeTab === "groups") return groupOptions.map(pillFromGroup);
     return [];
   });
@@ -450,9 +438,6 @@
   let runPeopleSearch = $derived(
     debounce((q: string) => void doSearchPeople(q), SEARCH_DEBOUNCE_MS),
   );
-  let runAgentSearch = $derived(
-    debounce((q: string) => void doSearchAgents(q), SEARCH_DEBOUNCE_MS),
-  );
 
   async function doSearchPeople(q: string) {
     searching = true;
@@ -462,19 +447,6 @@
     } catch (err) {
       peopleResults = [];
       pickerError = errorMessage(err, "Search failed");
-    } finally {
-      searching = false;
-    }
-  }
-
-  async function doSearchAgents(q: string) {
-    searching = true;
-    pickerError = null;
-    try {
-      agentResults = await api.listAgents(q);
-    } catch (err) {
-      agentResults = [];
-      pickerError = errorMessage(err, "Couldn't list agents");
     } finally {
       searching = false;
     }
@@ -500,7 +472,6 @@
     pickerError = null;
     highlight = -1;
     runPeopleSearch.cancel();
-    runAgentSearch.cancel();
     if (tab === "groups") {
       void loadGroups();
       openDropdown();
@@ -514,7 +485,6 @@
     highlight = -1;
     openDropdown();
     if (activeTab === "people") runPeopleSearch(query);
-    else if (activeTab === "agents") runAgentSearch(query);
     // groups filter locally via the derived list — no request needed.
   }
 
@@ -545,12 +515,10 @@
     query = "";
     highlight = -1;
     peopleResults = [];
-    agentResults = [];
     runPeopleSearch.cancel();
-    runAgentSearch.cancel();
     searchEl?.focus();
-    // People/Agents have nothing to show until the next keystroke; groups keep
-    // their (now-shorter) filtered list visible.
+    // People have nothing to show until the next keystroke; groups keep their
+    // (now-shorter) filtered list visible.
     if (activeTab !== "groups") dropdownOpen = false;
   }
 
@@ -688,7 +656,6 @@
       pills = [];
       query = "";
       peopleResults = [];
-      agentResults = [];
       dropdownOpen = false;
     } else {
       const grantedKeys = new Set(granted.map((g) => `${g.principal}:${g.id}`));
@@ -704,9 +671,6 @@
     if (searching) return "Searching…";
     if (activeTab === "people") {
       return query.trim() ? "No people found" : "Type to search people";
-    }
-    if (activeTab === "agents") {
-      return query.trim() ? "No agents found" : "Type to search agents";
     }
     return "No groups";
   }
@@ -870,7 +834,7 @@
     {#if canManage && pickerTabs.length > 0}
       <section
         class="datasette-acl-share-dialog__add"
-        aria-label="Add people, agents or groups"
+        aria-label="Add people or groups"
         bind:this={addBoxEl}
       >
         {#if pickerTabs.length > 1}
@@ -890,11 +854,7 @@
                 class:is-active={activeTab === tab}
                 onclick={() => selectTab(tab)}
               >
-                {tab === "people"
-                  ? "People"
-                  : tab === "agents"
-                    ? "Agents"
-                    : "Groups"}
+                {tab === "people" ? "People" : "Groups"}
               </button>
             {/each}
           </div>
@@ -911,14 +871,10 @@
               class="datasette-acl-share-dialog__search"
               placeholder={activeTab === "groups"
                 ? "Filter groups…"
-                : activeTab === "agents"
-                  ? "Search agents…"
-                  : "Search people…"}
+                : "Search people…"}
               aria-label={activeTab === "groups"
                 ? "Filter groups"
-                : activeTab === "agents"
-                  ? "Search agents"
-                  : "Search people"}
+                : "Search people"}
               role="combobox"
               aria-expanded={showDropdown}
               aria-controls="datasette-acl-share-results"
@@ -962,8 +918,7 @@
                       >
                       <span class="datasette-acl-share-dialog__result-text">
                         <span class="datasette-acl-share-dialog__name"
-                          >{opt.label}{#if opt.kind === "agent"}
-                            <span aria-hidden="true">🤖</span>{/if}</span
+                          >{opt.label}</span
                         >
                         {#if opt.kind === "user" && opt.email}
                           <span class="datasette-acl-share-dialog__sub"
@@ -1017,8 +972,7 @@
                   >{pill.kind === "group" ? "👥" : initials(pill.label)}</span
                 >
                 <span class="datasette-acl-share-dialog__pill-label"
-                  >{pill.label}{#if pill.kind === "agent"}
-                    <span aria-hidden="true">🤖</span>{/if}</span
+                  >{pill.label}</span
                 >
                 <button
                   type="button"

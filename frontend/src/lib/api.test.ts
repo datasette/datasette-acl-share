@@ -197,14 +197,6 @@ describe("ShareApi pickers", () => {
     expect(lastCall(fetchMock)[0]).toBe("/-/profiles/api/search");
   });
 
-  it("listAgents hits the agent identities endpoint", async () => {
-    const fetchMock = jsonFetch({ results: [{ id: "bot", kind: "agent", avatar_url: "" }] });
-    const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
-    const agents = await api.listAgents("bo");
-    expect(agents[0]?.kind).toBe("agent");
-    expect(lastCall(fetchMock)[0]).toBe("/-/agent/api/identities?q=bo");
-  });
-
   it("listGroups hits the acl groups endpoint", async () => {
     const fetchMock = jsonFetch({ groups: [{ id: 1, name: "team", member_count: 4 }] });
     const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
@@ -236,18 +228,6 @@ describe("ShareApi pickers carry the resource for per-resource authz", () => {
     await api.searchPeople("lois");
     expect(lastCall(fetchMock)[0]).toBe(
       "/-/profiles/api/search?q=lois&resource_type=paper-doc&parent=_paper&child=42",
-    );
-  });
-
-  it("listAgents appends the resource alongside q", async () => {
-    const fetchMock = jsonFetch({ results: [] });
-    const api = new ShareApi({
-      resource: { resourceType: "paper-doc", parent: "_paper", child: "42" },
-      fetch: fetchMock as unknown as typeof fetch,
-    });
-    await api.listAgents("bot");
-    expect(lastCall(fetchMock)[0]).toBe(
-      "/-/agent/api/identities?q=bot&resource_type=paper-doc&parent=_paper&child=42",
     );
   });
 
@@ -294,18 +274,17 @@ describe("error handling", () => {
 });
 
 describe("capability detection", () => {
-  it("probeCapabilities marks a 404 agent backend as absent", async () => {
+  it("probeCapabilities marks a 404 people backend as absent", async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input);
-      if (url.startsWith("/-/agent/api/identities")) {
+      if (url.startsWith("/-/profiles/api/search")) {
         return new Response(JSON.stringify({ ok: false, error: "not found" }), { status: 404 });
       }
       return new Response(JSON.stringify({ results: [] }), { status: 200 });
     });
     const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
     const caps = await api.probeCapabilities();
-    expect(caps.agents).toBe(false);
-    expect(caps.people).toBe(true);
+    expect(caps.people).toBe(false);
     expect(caps.groups).toBe(true);
     expect(caps.public).toBe(true);
   });
@@ -328,13 +307,11 @@ describe("capabilitiesFromFeatures", () => {
   it("enables everything when features is missing/empty", () => {
     expect(capabilitiesFromFeatures(undefined)).toEqual({
       people: true,
-      agents: true,
       groups: true,
       public: true,
     });
     expect(capabilitiesFromFeatures("")).toEqual({
       people: true,
-      agents: true,
       groups: true,
       public: true,
     });
@@ -343,7 +320,6 @@ describe("capabilitiesFromFeatures", () => {
   it("parses a comma-separated subset", () => {
     expect(capabilitiesFromFeatures("people, groups")).toEqual({
       people: true,
-      agents: false,
       groups: true,
       public: false,
     });
