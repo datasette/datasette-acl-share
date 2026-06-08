@@ -52,7 +52,7 @@ const STATE: ShareState = {
       actions: ["read", "write"],
       kind: "user",
       display_name: "Bob Editor",
-      avatar_url: "/-/profiles/pic/bob",
+      avatar_url: "/-/profile/pic/bob",
     },
     {
       principal: "group",

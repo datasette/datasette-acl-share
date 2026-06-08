@@ -268,8 +268,9 @@ export class ShareApi {
   // --- pickers -------------------------------------------------------------
 
   /** GET /-/profiles/api/search?q= → people picker (avatars/display names).
-   * Carries the dialog's resource so a fallback through the acl actors picker
-   * (`/-/acl/api/actors`) authorizes per-resource Managers. */
+   * The resource params are sent for forward-compat, but profiles' search
+   * endpoint currently ignores them and gates on the global `profile_access`
+   * permission (not per-resource Manager). */
   async searchPeople(q: string): Promise<Actor[]> {
     const url = withQuery(joinPath(this.profilesBase, "search"), {
       q,
