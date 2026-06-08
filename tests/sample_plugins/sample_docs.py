@@ -29,7 +29,7 @@ Pair with datasette-debug-gotham (actors / switcher) and datasette-user-profiles
 
 import json
 
-from datasette import hookimpl, Response
+from datasette import hookimpl, Forbidden, Response
 from datasette.permissions import Action, Resource
 
 from datasette_acl_share import datasette_share_assets
@@ -281,6 +281,16 @@ async def doc_page(request, datasette):
     doc = _DOCS_BY_ID.get(request.url_vars["doc_id"])
     if doc is None:
         return Response.html("Not found", status=404)
+
+    # Gate viewing on the acl `sample-doc-view` action, so reading a document
+    # actually reflects who's been shared in. The owner holds it via the seeded
+    # Manager grant; everyone else needs an explicit grant (e.g. Viewer).
+    if not await datasette.allowed(
+        action="sample-doc-view",
+        resource=SampleDocResource(doc["id"]),
+        actor=request.actor,
+    ):
+        raise Forbidden("You don't have access to this document")
 
     actor = request.actor or {}
     actor_json = ""
