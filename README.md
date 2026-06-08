@@ -29,7 +29,13 @@ HTML (custom elements are just DOM):
 ></datasette-acl-share-dialog>
 ```
 
-On connect the element calls the [datasette-acl](https://github.com/datasette/datasette-acl)
+The element renders a compact **share-icon button**. Clicking it opens a modal
+`<dialog>` (dismiss with the × button, the backdrop, or `Esc`) — nothing is
+shown inline. The resource is fetched lazily on first open, so a page can carry
+many share buttons cheaply. Pass `open` to open immediately, and `trigger-label`
+to show text beside the icon.
+
+Once open, the dialog calls the [datasette-acl](https://github.com/datasette/datasette-acl)
 JSON API to render "people with access" (avatars, role dropdowns, remove
 buttons) and a "General access" section, with an add-box that searches people
 (profiles), agents (datasette-agent) and groups (acl). Each action is its own
@@ -47,6 +53,8 @@ fetch — grant / update / revoke — matching Google Docs' incremental behaviou
 | `csrftoken` | – | forwarded as `x-csrftoken` on writes; optional under datasette 1.0a30 (see [CSRF](#csrf)) |
 | `features` | – | comma list of sections to show (`people,agents,groups,public`); empty/missing = all available |
 | `api-base` | – | override the acl API prefix (default `/-/acl/api`) |
+| `open` | – | when set (any value other than `false`), open the modal on mount instead of waiting for a trigger click |
+| `trigger-label` | – | text shown next to the share icon on the trigger button (icon-only if omitted) |
 
 ### Events
 

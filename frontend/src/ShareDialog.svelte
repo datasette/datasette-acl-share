@@ -57,6 +57,9 @@
     csrftoken,
     "api-base": apiBase,
     features,
+    open: openAttr,
+    "trigger-label": triggerLabel,
+    disabled: disabledAttr,
   }: {
     "resource-type"?: string;
     parent?: string;
@@ -66,7 +69,17 @@
     csrftoken?: string;
     "api-base"?: string;
     features?: string;
+    /** When set (non-"false"), open the modal on mount instead of waiting for a
+     * trigger click. */
+    open?: string;
+    /** Optional text shown next to the share icon on the trigger button. */
+    "trigger-label"?: string;
+    /** When set (non-"false"), disable the trigger so the dialog can't open
+     * (e.g. the current actor isn't allowed to share this resource). */
+    disabled?: string;
   } = $props();
+
+  let isDisabled = $derived(disabledAttr != null && disabledAttr !== "false");
 
   /** Which optional sections to show. Derived from the host `features` attr
    * (comma list); missing/empty enables everything available. */
@@ -112,11 +125,49 @@
   // hosts expect (e.g. paper re-runs its SSE subscriber sweep on revoke).
   let host: HTMLElement | undefined = $state();
 
+  // The modal. The dialog renders behind a share-icon trigger and is shown with
+  // the native <dialog> modal (showModal) so it overlays the page rather than
+  // sitting inline.
+  let dialogEl = $state<HTMLDialogElement>();
+  // Whether the dialog has ever been opened — gates the initial load so a
+  // closed trigger costs no network (a page can have many share buttons).
+  let hasOpened = $state(false);
+
+  /** Accessible label for the trigger; distinct from the inner "Share" submit
+   * button so both are unambiguous to assistive tech and tests. */
+  let triggerAriaLabel = $derived(
+    resourceLabel ? `Share “${resourceLabel}”` : "Share",
+  );
+
+  function openDialog() {
+    if (isDisabled) return;
+    hasOpened = true;
+    if (dialogEl && !dialogEl.open) dialogEl.showModal();
+  }
+
+  function closeDialog() {
+    dialogEl?.close();
+  }
+
+  /** A click whose target is the dialog element itself (not its content) is a
+   * click on the ::backdrop — dismiss, like a typical modal. */
+  function onDialogClick(event: MouseEvent) {
+    if (event.target === dialogEl) closeDialog();
+  }
+
+  // Auto-open when the `open` attribute is set (host opt-in; also used by tests).
+  let wantOpen = $derived(openAttr != null && openAttr !== "false");
   $effect(() => {
-    // Re-load whenever the resource identity changes.
+    if (wantOpen && dialogEl && !dialogEl.open) openDialog();
+  });
+
+  $effect(() => {
+    // (Re)load whenever the resource identity changes, but only once the dialog
+    // has been opened.
     const rt = resourceType;
     const p = parent;
     const c = child;
+    if (!hasOpened) return;
     if (!rt || !p) {
       loading = false;
       loadError = "Missing resource-type or parent";
@@ -766,12 +817,50 @@
   }
 </script>
 
-<div class="datasette-acl-share-dialog" bind:this={host}>
-  <header class="datasette-acl-share-dialog__header">
-    <h2 class="datasette-acl-share-dialog__title">
-      {resourceLabel ? `Share “${resourceLabel}”` : "Share"}
-    </h2>
-  </header>
+<div class="datasette-acl-share" bind:this={host}>
+  <button
+    type="button"
+    class="datasette-acl-share__trigger"
+    class:has-label={triggerLabel}
+    aria-label={triggerAriaLabel}
+    aria-haspopup="dialog"
+    disabled={isDisabled}
+    onclick={openDialog}
+  >
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      width="16"
+      height="16"
+      fill="currentColor"
+      viewBox="0 0 16 16"
+      aria-hidden="true"
+    >
+      <path
+        d="M13.5 1a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3M11 2.5a2.5 2.5 0 1 1 .603 1.628l-6.718 3.12a2.5 2.5 0 0 1 0 1.504l6.718 3.12a2.5 2.5 0 1 1-.488.876l-6.718-3.12a2.5 2.5 0 1 1 0-3.256l6.718-3.12A2.5 2.5 0 0 1 11 2.5m-8.5 4a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3m11 5.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3"
+      />
+    </svg>
+    {#if triggerLabel}<span class="datasette-acl-share__trigger-text"
+        >{triggerLabel}</span
+      >{/if}
+  </button>
+
+  <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
+  <dialog
+    class="datasette-acl-share-dialog"
+    bind:this={dialogEl}
+    onclick={onDialogClick}
+  >
+    <header class="datasette-acl-share-dialog__header">
+      <h2 class="datasette-acl-share-dialog__title">
+        {resourceLabel ? `Share “${resourceLabel}”` : "Share"}
+      </h2>
+      <button
+        type="button"
+        class="datasette-acl-share-dialog__close"
+        aria-label="Close"
+        onclick={closeDialog}>×</button
+      >
+    </header>
 
   {#if loading}
     <p class="datasette-acl-share-dialog__loading">Loading…</p>
@@ -1127,9 +1216,44 @@
       </section>
     {/if}
   {/if}
+  </dialog>
 </div>
 
 <style>
+  .datasette-acl-share {
+    display: inline-block;
+  }
+
+  /* The share-icon trigger button. */
+  .datasette-acl-share__trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem;
+    border: 1px solid #d0d7de;
+    border-radius: 6px;
+    background: #f6f8fa;
+    color: #1f2328;
+    cursor: pointer;
+    line-height: 0;
+  }
+  .datasette-acl-share__trigger.has-label {
+    padding: 0.375rem 0.625rem;
+  }
+  .datasette-acl-share__trigger:hover {
+    background: #eef1f4;
+  }
+  .datasette-acl-share__trigger:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .datasette-acl-share__trigger-text {
+    font-family: system-ui, sans-serif;
+    font-size: 0.875rem;
+    line-height: 1;
+  }
+
+  /* The dialog itself, shown as a native modal via showModal(). */
   .datasette-acl-share-dialog {
     font-family:
       system-ui,
@@ -1137,10 +1261,38 @@
       "Segoe UI",
       sans-serif;
     color: #1f2328;
+    width: min(32rem, calc(100vw - 2rem));
     max-width: 32rem;
+    border: none;
+    border-radius: 12px;
+    padding: 1.25rem;
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.18),
+      0 1px 3px rgba(0, 0, 0, 0.12);
+  }
+  .datasette-acl-share-dialog::backdrop {
+    background: rgba(0, 0, 0, 0.35);
   }
   .datasette-acl-share-dialog__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
     margin-bottom: 0.75rem;
+  }
+  .datasette-acl-share-dialog__close {
+    border: none;
+    background: transparent;
+    color: #57606a;
+    font-size: 1.375rem;
+    line-height: 1;
+    padding: 0 0.25rem;
+    cursor: pointer;
+    border-radius: 6px;
+  }
+  .datasette-acl-share-dialog__close:hover {
+    background: #f0f1f2;
+    color: #1f2328;
   }
   .datasette-acl-share-dialog__title {
     margin: 0;

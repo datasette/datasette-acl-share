@@ -99,7 +99,12 @@ function mount(
   attrs: Record<string, string>,
 ): { el: HTMLElement; events: Record<string, CustomEvent[]> } {
   const el = document.createElement("datasette-acl-share-dialog");
-  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  // Open the modal on mount so tests interact with the dialog content directly
+  // (the component otherwise waits for a trigger click). Individual tests can
+  // override by passing their own `open`.
+  for (const [k, v] of Object.entries({ open: "true", ...attrs })) {
+    el.setAttribute(k, v);
+  }
   const events: Record<string, CustomEvent[]> = {};
   for (const type of [
     "share-granted",
@@ -121,6 +126,62 @@ const BASE_ATTRS = {
   "resource-label": "Q2 Planning",
   "actor-json": JSON.stringify({ id: "alice", kind: "user" }),
 };
+
+describe("<datasette-acl-share-dialog> trigger + modal", () => {
+  it("stays closed (no load) until the trigger is clicked, then opens", async () => {
+    on("/resource/", () => json(STATE));
+
+    // Mount WITHOUT auto-open by creating the element directly.
+    const el = document.createElement("datasette-acl-share-dialog");
+    for (const [k, v] of Object.entries(BASE_ATTRS)) el.setAttribute(k, v);
+    document.body.appendChild(el);
+
+    // The trigger is present; the resource has not been fetched and the dialog
+    // content (the grant rows) is not shown.
+    const trigger = page.getByRole("button", { name: 'Share “Q2 Planning”' });
+    await expect.element(trigger).toBeInTheDocument();
+    expect(calls.some((c) => c.url.includes("/resource/"))).toBe(false);
+    expect(page.getByText("Bob Editor").query()).toBeNull();
+
+    // Clicking the trigger loads + reveals the dialog.
+    await trigger.click();
+    await expect.element(page.getByText("Bob Editor")).toBeInTheDocument();
+    expect(calls.some((c) => c.url.includes("/resource/"))).toBe(true);
+  });
+
+  it("disabled trigger can't open the dialog", async () => {
+    on("/resource/", () => json(STATE));
+
+    const el = document.createElement("datasette-acl-share-dialog");
+    for (const [k, v] of Object.entries(BASE_ATTRS)) el.setAttribute(k, v);
+    el.setAttribute("disabled", "");
+    document.body.appendChild(el);
+
+    const trigger = page.getByRole("button", { name: 'Share “Q2 Planning”' });
+    await expect.element(trigger).toBeInTheDocument();
+    await expect.element(trigger).toBeDisabled();
+
+    // Even an explicit open attribute must not open a disabled dialog.
+    el.setAttribute("open", "true");
+    await new Promise((r) => setTimeout(r, 0));
+    expect((document.querySelector("dialog") as HTMLDialogElement).open).toBe(
+      false,
+    );
+    expect(calls.some((c) => c.url.includes("/resource/"))).toBe(false);
+  });
+
+  it("closes when the Close button is clicked", async () => {
+    on("/resource/", () => json(STATE));
+    mount(BASE_ATTRS); // auto-opens
+
+    await expect.element(page.getByText("Bob Editor")).toBeInTheDocument();
+    const dialog = document.querySelector("dialog") as HTMLDialogElement;
+    expect(dialog.open).toBe(true);
+
+    await page.getByRole("button", { name: "Close" }).click();
+    expect(dialog.open).toBe(false);
+  });
+});
 
 describe("<datasette-acl-share-dialog> people-with-access list", () => {
   it("renders a row per grant with names, kind badges and roles", async () => {
