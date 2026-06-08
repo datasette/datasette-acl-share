@@ -1,6 +1,7 @@
-// Types mirroring the datasette-acl JSON API (branch asg017/sharing-v2),
-// the datasette-user-profiles search API, and the (phase-07) datasette-agent
-// identities API. These shapes are what the share dialog component consumes.
+// Types mirroring the datasette-acl JSON API (branch acl/7-json-api; see its
+// docs/json-api.md), the datasette-user-profiles search API, and the (phase-07)
+// datasette-agent identities API. These shapes are what the share dialog
+// component consumes.
 //
 // Sources:
 //   acl       datasette_acl/views/api.py  (resource_grants_json / *_json)
@@ -118,10 +119,14 @@ export interface GrantResponse {
   error?: string;
 }
 
-/** The `{ok, removed}` envelope returned by revoke. */
+/**
+ * The `{ok, removed}` envelope returned by revoke. `removed` is the sorted
+ * list of action names that were actually removed (empty when the principal
+ * held no grants).
+ */
 export interface RevokeResponse {
   ok: boolean;
-  removed?: number;
+  removed?: string[];
   error?: string;
 }
 

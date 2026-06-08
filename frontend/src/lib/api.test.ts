@@ -154,17 +154,24 @@ describe("ShareApi mutations", () => {
     expect(lastCall(fetchMock)[0]).toBe("/-/acl/api/resource/paper-doc/mydb/42/update");
   });
 
-  it("revoke POSTs the principal and returns removed count", async () => {
-    const fetchMock = jsonFetch({ ok: true, removed: 3 });
+  it("revoke POSTs the principal and returns the removed action names", async () => {
+    const fetchMock = jsonFetch({ ok: true, removed: ["doc-edit", "doc-view"] });
     const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
     const removed = await api.revoke("paper-doc", "mydb", "42", { actor_id: "alice" });
-    expect(removed).toBe(3);
+    expect(removed).toEqual(["doc-edit", "doc-view"]);
     expect(lastCall(fetchMock)[0]).toBe("/-/acl/api/resource/paper-doc/mydb/42/revoke");
     expect(JSON.parse(lastCall(fetchMock)[1].body as string)).toEqual({ actor_id: "alice" });
   });
 
+  it("revoke returns [] when the principal held no grants", async () => {
+    const fetchMock = jsonFetch({ ok: true, removed: [] });
+    const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
+    const removed = await api.revoke("t", "p", null, { actor_id: "nobody" });
+    expect(removed).toEqual([]);
+  });
+
   it("revoke supports group principals", async () => {
-    const fetchMock = jsonFetch({ ok: true, removed: 1 });
+    const fetchMock = jsonFetch({ ok: true, removed: ["t-view"] });
     const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
     await api.revoke("t", "p", null, { group_id: 7 });
     expect(JSON.parse(lastCall(fetchMock)[1].body as string)).toEqual({ group_id: 7 });

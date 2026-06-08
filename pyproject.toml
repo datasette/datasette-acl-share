@@ -10,6 +10,9 @@ requires-python = ">=3.10"
 dependencies = [
     "datasette>=1.0a20",
     "datasette-vite>=0.0.1a4",
+    # The JSON API the share dialog drives lives in datasette-acl. Pin to the
+    # tip branch on GitHub until that work lands in a tagged release.
+    "datasette-acl @ git+https://github.com/datasette/datasette-acl@acl/7-json-api",
 ]
 
 [dependency-groups]

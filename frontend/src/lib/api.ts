@@ -258,16 +258,17 @@ export class ShareApi {
     return res.grant;
   }
 
-  /** POST .../revoke → remove all rows for a principal on this resource. */
+  /** POST .../revoke → remove all rows for a principal on this resource.
+   * Resolves to the sorted list of action names that were removed. */
   async revoke(
     resourceType: string,
     parent: string,
     child: string | null | undefined,
     principal: Principal,
-  ): Promise<number> {
+  ): Promise<string[]> {
     const url = this.mutationUrl("revoke", resourceType, parent, child);
     const res = await this.postJson<RevokeResponse>(url, principal);
-    return res.removed ?? 0;
+    return res.removed ?? [];
   }
 
   // --- pickers -------------------------------------------------------------
