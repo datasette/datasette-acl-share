@@ -14,6 +14,8 @@
     <a href="{{ urls.path('/sample-docs/' + doc.id) }}">{{ doc.title }}</a>
     — {{ doc.owner_name }}
   </li>
+  {% else %}
+  <li>No documents shared with you.</li>
   {% endfor %}
 </ul>
 {% endblock %}

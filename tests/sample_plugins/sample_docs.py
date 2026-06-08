@@ -266,9 +266,16 @@ def homepage_actions(datasette, actor, request):
 
 async def index_page(request, datasette):
     await _ensure_owner_grants(datasette)
-    documents = [
-        {**doc, "owner_name": _owner_name(doc["owner"])} for doc in DOCUMENTS
-    ]
+    # Only list documents the current actor may view (same gate as the doc
+    # page), so the index reflects acl sharing rather than every document.
+    documents = []
+    for doc in DOCUMENTS:
+        if await datasette.allowed(
+            action="sample-doc-view",
+            resource=SampleDocResource(doc["id"]),
+            actor=request.actor,
+        ):
+            documents.append({**doc, "owner_name": _owner_name(doc["owner"])})
     return Response.html(
         await datasette.render_template(
             "sample_docs_index.html", {"documents": documents}, request=request
