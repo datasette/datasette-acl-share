@@ -62,11 +62,8 @@ sorted list of removed action names (`{"ok", "removed": [...]}`).
 
 ## Dependencies
 
-`pyproject.toml` pins **datasette-acl to the `main` git branch**:
-`datasette-acl @ git+https://github.com/datasette/datasette-acl@main` (the JSON
-API has merged to main but hasn't landed in a tagged acl release yet — bump to a
-version pin when it does). Also depends on `datasette>=1.0a20` and
-`datasette-vite`.
+`pyproject.toml` requires **`datasette-acl>=0.5a1`** (the first tagged release
+with the JSON API). Also depends on `datasette>=1.0a20` and `datasette-vite`.
 
 ## Dev & test
 
@@ -150,8 +147,6 @@ Lois → doc 1 now appears on her index and opens. Or share Viewer with the
   them into **People search** via acl's actors picker `kind` filter
   (`/-/acl/api/actors?kind=agent`) rather than a separate tab/backend. Design
   notes: `../research-sharing/05-agent-actors-plan.md`.
-- **datasette-acl dep is pinned to `main`** — repin to a released version once
-  acl ships a tagged release with the JSON API.
 - **Read endpoint is manager-only (acl v1).** Non-managers can't load the dialog
   at all; revisit if viewers should see a read-only roster.
 - **Consumer migrations** (paper / places / sheets / comments embedding this

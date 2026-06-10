@@ -10,9 +10,8 @@ requires-python = ">=3.10"
 dependencies = [
     "datasette>=1.0a20",
     "datasette-vite>=0.0.1a4",
-    # The JSON API the share dialog drives lives in datasette-acl. The work has
-    # merged to main; pin to main until it lands in a tagged release.
-    "datasette-acl @ git+https://github.com/datasette/datasette-acl@main",
+    # The JSON API the share dialog drives lives in datasette-acl (>=0.5a1).
+    "datasette-acl>=0.5a1",
 ]
 
 [dependency-groups]
