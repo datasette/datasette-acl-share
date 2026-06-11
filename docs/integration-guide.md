@@ -122,10 +122,17 @@ startup order isn't guaranteed:
 ```python
 from datasette_acl.grants import grant
 
-await grant(datasette, "my-doc", doc_id, actor_id=owner_id, role="Manager", by_actor="my-plugin-seed")
+await grant(datasette, "my-doc", doc_id, actor_id=owner_id, principal_type="actor", role="Manager", by_actor="my-plugin-seed")
 # group grant: pass group_id=<int> instead of actor_id (resolve the id by name first)
-# wildcard:    actor_id="_signed_in" (any logged-in actor) or "*" (anyone) or "_anonymous"
+# wildcard:    actor_id="_signed_in" (any logged-in actor) or "*" (anyone) or "_anonymous",
+#              with principal_type="public"
 ```
+
+`principal_type` (`"actor"` or `"public"`, optional) pins how the principal is
+stored. Without it acl infers from the id — a wildcard id becomes a `public`
+grant, anything else an `actor` grant — which is wrong exactly when a real
+user's id collides with a wildcard name. Pass it explicitly, as the dialog
+itself does on every mutation.
 
 ### 1e. Gate your pages on the actions
 
@@ -354,7 +361,7 @@ async def _seed(datasette):
         return
     from datasette_acl.grants import grant
     for doc_id, doc in DOCS.items():
-        await grant(datasette, "my-doc", doc_id, actor_id=doc["owner"], role="Manager", by_actor="seed")
+        await grant(datasette, "my-doc", doc_id, actor_id=doc["owner"], principal_type="actor", role="Manager", by_actor="seed")
     datasette._seeded = True
 
 async def doc_page(request, datasette):

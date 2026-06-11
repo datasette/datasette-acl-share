@@ -197,9 +197,15 @@
   }
 
   function principalOf(grant: Grant): Principal {
-    return grant.principal === "group"
-      ? { group_id: grant.id }
-      : { actor_id: grant.id };
+    if (grant.principal === "group") {
+      return { group_id: grant.id };
+    }
+    // Explicit principal_type so mutations on a wildcard row never touch a
+    // like-named real user's grant (and vice versa).
+    return {
+      actor_id: grant.id,
+      principal_type: grant.kind === "public" ? "public" : "actor",
+    };
   }
 
   function isYou(grant: Grant): boolean {
@@ -732,11 +738,13 @@
       if (revokePrevious && revokePrevious.id !== principal) {
         await api.revoke(resourceType, parent, child ?? null, {
           actor_id: revokePrevious.id,
+          principal_type: "public",
         });
       }
       const grant = await api.grant(resourceType, parent, child ?? null, {
         actor_id: principal,
         role,
+        principal_type: "public",
       });
       if (share) {
         const without = share.grants.filter((g) => g.kind !== "public");
@@ -764,6 +772,7 @@
     try {
       await api.revoke(resourceType, parent, child ?? null, {
         actor_id: grant.id,
+        principal_type: "public",
       });
       if (share) {
         share.grants = share.grants.filter((g) => g.kind !== "public");

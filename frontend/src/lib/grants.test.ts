@@ -77,11 +77,12 @@ describe("general-access helpers", () => {
     expect(GENERAL_ACCESS_PRINCIPALS).toEqual(["*", "_signed_in"]);
   });
 
-  it("isWildcardGrant matches public kind and wildcard ids", () => {
+  it("isWildcardGrant matches on public kind only", () => {
     expect(isWildcardGrant(grant({ id: "*", kind: "public" }))).toBe(true);
     expect(isWildcardGrant(grant({ id: "_signed_in", kind: "public" }))).toBe(true);
-    // Even if kind wasn't enriched, the id is recognised.
-    expect(isWildcardGrant(grant({ id: "*", kind: "user" }))).toBe(true);
+    // A real user whose id collides with a wildcard (principal_type "actor",
+    // so kind "user") belongs in the people roster, not General access.
+    expect(isWildcardGrant(grant({ id: "*", kind: "user" }))).toBe(false);
     expect(isWildcardGrant(grant({ id: "alice", kind: "user" }))).toBe(false);
   });
 

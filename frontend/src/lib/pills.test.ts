@@ -104,7 +104,12 @@ describe("hasPill / addPill / removePill", () => {
 
 describe("pillPrincipal", () => {
   it("maps actor and group pills to grant principals", () => {
-    expect(pillPrincipal(ALICE)).toEqual({ actor_id: "alice" });
+    // Actor pills come from the people picker, so they pin
+    // principal_type:"actor" — never inferred as a wildcard.
+    expect(pillPrincipal(ALICE)).toEqual({
+      actor_id: "alice",
+      principal_type: "actor",
+    });
     expect(pillPrincipal(TEAM)).toEqual({ group_id: "7" });
   });
 });
@@ -112,7 +117,7 @@ describe("pillPrincipal", () => {
 describe("batchGrantRequests", () => {
   it("builds one request per pill at the given role, in order", () => {
     expect(batchGrantRequests([ALICE, TEAM], "Editor")).toEqual([
-      { actor_id: "alice", role: "Editor" },
+      { actor_id: "alice", principal_type: "actor", role: "Editor" },
       { group_id: "7", role: "Editor" },
     ]);
   });

@@ -60,10 +60,26 @@ update, groups + actors pickers). Full spec: `../datasette-acl/docs/json-api.md`
 Notable: the **read endpoint is manager-only** (v1) and `revoke` returns the
 sorted list of removed action names (`{"ok", "removed": [...]}`).
 
+**`principal_type`** (acl `general-access-principals` branch): every mutation
+the dialog sends includes an explicit `principal_type` — `"public"` for the
+General-access wildcards (`*` / `_signed_in`), `"actor"` for everyone else —
+so a real user whose id collides with a wildcard name is never confused with a
+general-access grant. The GET response shape is unchanged (wildcards are still
+`principal: "actor"` entries flagged `kind: "public"`); `isWildcardGrant`
+matches on `kind` only, never the raw id. 0.5a1 servers ignore the extra body
+field, so this is backward-compatible.
+
 ## Dependencies
 
 `pyproject.toml` requires **`datasette-acl>=0.5a1`** (the first tagged release
-with the JSON API) and `datasette-vite`.
+with the JSON API) and `datasette-vite`. The `principal_type` mutation field
+ships in acl's `general-access-principals` branch (unreleased); bump the floor
+when it's tagged. Until then `just dev` installs acl from the **local
+checkout** (`uv pip install -e ../datasette-acl` into the venv + `uv run
+--no-sync`) because the demo's seed code passes the `principal_type=` kwarg to
+acl's `grant()` helper. (An overlay `--with-editable` doesn't work while the
+checkout still reports version 0.5a1 — uv treats the locked PyPI 0.5a1 as
+already satisfying it.)
 
 ## Dev & test
 
@@ -138,6 +154,9 @@ Lois → doc 1 now appears on her index and opens. Or share Viewer with the
   sharing shapes, gotham newsrooms wired as acl dynamic groups, and an index
   that shows each actor's role.
 - Plugin-author integration guide at `docs/integration-guide.md`.
+- Aligned to acl's `general-access-principals` branch: explicit
+  `principal_type` on all mutations (dialog + demo seeding), kind-only
+  wildcard detection.
 - All suites green: frontend check (0 errors), vitest, pytest.
 
 ## What's left / deferred

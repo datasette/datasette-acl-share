@@ -8,9 +8,12 @@ import type { Grant, Role, WildcardPrincipal } from "./types";
  * `_signed_in` (Anyone signed in). */
 export const GENERAL_ACCESS_PRINCIPALS: WildcardPrincipal[] = ["*", "_signed_in"];
 
-/** True when a grant is a wildcard "General access" row (kind:"public"). */
+/** True when a grant is a wildcard "General access" row. The server tags
+ * these `kind: "public"` (stored with principal_type `public`); matching on
+ * kind only — never on the raw id — keeps a real user who happens to be named
+ * `*` / `_signed_in` (kind `user`) in the people roster. */
 export function isWildcardGrant(grant: Grant): boolean {
-  return grant.kind === "public" || grant.id === "*" || grant.id === "_signed_in";
+  return grant.kind === "public";
 }
 
 /**

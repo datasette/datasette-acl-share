@@ -98,6 +98,7 @@ describe("ShareApi mutations", () => {
     const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
     const result = await api.grant("paper-doc", "mydb", "42", {
       actor_id: "alice",
+      principal_type: "actor",
       role: "Editor",
     });
     expect(result.id).toBe("alice");
@@ -107,8 +108,10 @@ describe("ShareApi mutations", () => {
     const headers = init.headers as Record<string, string>;
     expect(headers["Content-Type"]).toBe("application/json");
     expect(init.credentials).toBe("same-origin");
+    // principal_type passes through to the body untouched.
     expect(JSON.parse(init.body as string)).toEqual({
       actor_id: "alice",
+      principal_type: "actor",
       role: "Editor",
     });
   });

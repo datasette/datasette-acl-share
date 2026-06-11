@@ -86,12 +86,15 @@ export function removePill(
 
 /**
  * The {@link Principal} body for a pill, used to build grant/revoke requests.
- * Group ids stay as the stringified form the grant store accepts.
+ * Group ids stay as the stringified form the grant store accepts. Picker
+ * results are always real people, so actor pills carry an explicit
+ * `principal_type: "actor"` — a user literally named `*` or `_signed_in` must
+ * never be stored as a general-access wildcard.
  */
 export function pillPrincipal(pill: Pill): Principal {
   return pill.principal === "group"
     ? { group_id: pill.id }
-    : { actor_id: pill.id };
+    : { actor_id: pill.id, principal_type: "actor" };
 }
 
 /**

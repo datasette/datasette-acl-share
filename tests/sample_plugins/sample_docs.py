@@ -351,10 +351,15 @@ async def _ensure_seed_grants(datasette):
     A doc's optional ``shares`` list holds dicts with a ``role`` plus exactly one
     of ``actor`` (an actor id, or a wildcard like ``_signed_in`` / ``*``) or
     ``group`` (a group name, resolved to its id).
+
+    Actor grants pass an explicit ``principal_type`` (``"public"`` for wildcard
+    ids, ``"actor"`` otherwise) rather than relying on acl's inference — the
+    same discipline the dialog itself follows.
     """
     if getattr(datasette, "_sample_docs_seeded", False):
         return
     from datasette_acl.grants import grant
+    from datasette_acl.utils import PUBLIC_PRINCIPALS
 
     db = datasette.get_internal_database()
     for doc in DOCUMENTS:
@@ -363,6 +368,7 @@ async def _ensure_seed_grants(datasette):
             "sample-doc",
             doc["id"],
             actor_id=doc["owner"],
+            principal_type="actor",
             role="Manager",
             by_actor="sample-docs-seed",
         )
@@ -378,11 +384,15 @@ async def _ensure_seed_grants(datasette):
                     by_actor="sample-docs-seed",
                 )
             else:
+                actor = share["actor"]
                 await grant(
                     datasette,
                     "sample-doc",
                     doc["id"],
-                    actor_id=share["actor"],
+                    actor_id=actor,
+                    principal_type=(
+                        "public" if actor in PUBLIC_PRINCIPALS else "actor"
+                    ),
                     role=share["role"],
                     by_actor="sample-docs-seed",
                 )

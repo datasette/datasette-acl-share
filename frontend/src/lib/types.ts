@@ -1,6 +1,7 @@
-// Types mirroring the datasette-acl JSON API (branch acl/7-json-api; see its
-// docs/json-api.md) and the datasette-user-profiles search API. These shapes
-// are what the share dialog component consumes.
+// Types mirroring the datasette-acl JSON API (see its docs/json-api.md;
+// includes the general-access-principals `principal_type` additions) and the
+// datasette-user-profiles search API. These shapes are what the share dialog
+// component consumes.
 //
 // Sources:
 //   acl       datasette_acl/views/api.py  (resource_grants_json / *_json)
@@ -9,9 +10,18 @@
 /** Which kind of principal a grant or search hit refers to. */
 export type ActorKind = "user" | "group" | "public";
 
-/** A grant principal is either a specific actor, a group, or (for wildcard
- * "general access" rows) still stored as an actor principal with a wildcard id. */
+/** The `principal` discriminator on grant entries. Wildcard "general access"
+ * rows are stored server-side with a distinct principal_type of `public`, but
+ * are still serialized as `principal: "actor"` entries (distinguished by
+ * `kind: "public"`). */
 export type PrincipalType = "actor" | "group";
+
+/** The optional `principal_type` body field on grant/update/revoke mutations.
+ * When omitted the server infers it (a wildcard id → `public`, else `actor`).
+ * Pass it explicitly to disambiguate a real user whose id collides with a
+ * wildcard (e.g. a user literally named `_signed_in`). `"public"` with a
+ * non-wildcard id is a 400. */
+export type GrantPrincipalType = "actor" | "public";
 
 /** Wildcard principal ids used for the "General access" section.
  * `*` = anyone (anonymous/public); `_signed_in` = any logged-in actor.
@@ -98,10 +108,14 @@ export interface Group {
   member_count: number;
 }
 
-/** A principal to grant/revoke/update against. Exactly one of the id fields. */
+/** A principal to grant/revoke/update against. Exactly one of the id fields.
+ * `principal_type` only applies with `actor_id` (see {@link GrantPrincipalType});
+ * the dialog always sends it so a wildcard-named user id is never mistaken for
+ * a general-access wildcard (and vice versa). */
 export interface Principal {
   actor_id?: string;
   group_id?: number | string;
+  principal_type?: GrantPrincipalType;
 }
 
 /** Body for a grant/update mutation: a principal plus a role (or raw actions). */

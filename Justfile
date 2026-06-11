@@ -30,10 +30,21 @@ frontend-dev:
 check-frontend:
   npm --prefix frontend run check
 
+# NOTE: acl comes from the local checkout, not PyPI — the demo seeds grants
+# with the explicit principal_type= kwarg (acl general-access-principals
+# branch, unreleased as of 0.5a1). It is installed straight into the project
+# venv and `uv run --no-sync` keeps it there (a `--with-editable` overlay
+# won't do: the overlay re-resolves datasette-acl from the registry — the
+# checkout still reports 0.5a1 — and shadows the venv). The project itself
+# comes from `uv sync` (editable), so no `--with-editable .` either: its
+# overlayed deps would drag registry acl back in. Drop all this once the
+# branch ships in a tagged release.
 dev *flags:
+  uv sync
+  uv pip install -q -e ../datasette-acl
   DATASETTE_SECRET=abc123 uv run \
+    --no-sync \
     --prerelease=allow \
-    --with-editable . \
     --with-editable ../datasette-debug-gotham \
     --with-editable ../datasette-user-profiles \
     --with-editable ../datasette-debug-bar \

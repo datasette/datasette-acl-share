@@ -237,7 +237,11 @@ describe("<datasette-acl-share-dialog> people-with-access list", () => {
       const update = calls.find((c) => c.url.includes("/update"));
       expect(update).toBeTruthy();
       expect(update!.method).toBe("POST");
-      expect(update!.body).toEqual({ actor_id: "bob", role: "Viewer" });
+      expect(update!.body).toEqual({
+        actor_id: "bob",
+        principal_type: "actor",
+        role: "Viewer",
+      });
     });
     await vi.waitFor(() => expect(events["share-updated"]).toHaveLength(1));
     expect(events["share-updated"]![0]!.detail).toMatchObject({
@@ -279,7 +283,7 @@ describe("<datasette-acl-share-dialog> people-with-access list", () => {
     await vi.waitFor(() => {
       const revoke = calls.find((c) => c.url.includes("/revoke"));
       expect(revoke).toBeTruthy();
-      expect(revoke!.body).toEqual({ actor_id: "bob" });
+      expect(revoke!.body).toEqual({ actor_id: "bob", principal_type: "actor" });
     });
     await vi.waitFor(() => expect(events["share-revoked"]).toHaveLength(1));
     expect(events["share-revoked"]![0]!.detail).toMatchObject({
@@ -585,7 +589,11 @@ describe("<datasette-acl-share-dialog> general access", () => {
     await vi.waitFor(() => {
       const g = calls.find((c) => c.url.endsWith("/grant"));
       expect(g).toBeTruthy();
-      expect(g!.body).toMatchObject({ actor_id: "_signed_in", role: "Editor" });
+      expect(g!.body).toMatchObject({
+        actor_id: "_signed_in",
+        principal_type: "public",
+        role: "Editor",
+      });
     });
     await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(1));
   });
@@ -660,7 +668,10 @@ describe("<datasette-acl-share-dialog> general access", () => {
     await vi.waitFor(() => {
       const r = calls.find((c) => c.url.endsWith("/revoke"));
       expect(r).toBeTruthy();
-      expect(r!.body).toMatchObject({ actor_id: "_signed_in" });
+      expect(r!.body).toMatchObject({
+        actor_id: "_signed_in",
+        principal_type: "public",
+      });
     });
     await vi.waitFor(() =>
       expect(events["share-revoked"]!.length).toBeGreaterThan(0),

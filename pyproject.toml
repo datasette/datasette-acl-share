@@ -11,6 +11,9 @@ dependencies = [
     "datasette>=1.0a30",
     "datasette-vite>=0.0.1a4",
     # The JSON API the share dialog drives lives in datasette-acl (>=0.5a1).
+    # The dialog also sends the explicit principal_type body field from acl's
+    # general-access-principals branch; 0.5a1 servers ignore the extra field,
+    # so 0.5a1 stays the floor. Bump once that branch ships in a release.
     "datasette-acl>=0.5a1",
 ]
 
