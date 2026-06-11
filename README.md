@@ -4,15 +4,10 @@ A reusable, Google-Docs-style **share dialog** for Datasette, shipped as a
 framework-agnostic Svelte 5 custom element: `<datasette-acl-share-dialog>`.
 
 One component, embedded by every document plugin (paper, places, sheets, …). It
-orchestrates two backends so consumers write almost no sharing code:
-
-| Concern | Backend |
-|---|---|
-| read/write grants, roles, groups | [datasette-acl](https://github.com/datasette/datasette-acl) |
-| search people, render avatars | datasette-user-profiles |
-
-The dialog degrades gracefully: no profiles → no avatars/search (initials chips
-and no People search).
+is the UI layer over the [datasette-acl](https://github.com/datasette/datasette-acl)
+JSON API — grants, roles, groups, and "general access" wildcards. If
+datasette-user-profiles is installed the dialog adds people search and avatars;
+without it, it degrades gracefully to initials chips with no People search.
 
 ## Usage
 
@@ -28,17 +23,16 @@ HTML (custom elements are just DOM):
 ></datasette-acl-share-dialog>
 ```
 
-The element renders a compact **share-icon button**. Clicking it opens a modal
-`<dialog>` (dismiss with the × button, the backdrop, or `Esc`) — nothing is
-shown inline. The resource is fetched lazily on first open, so a page can carry
-many share buttons cheaply. Pass `open` to open immediately, and `trigger-label`
-to show text beside the icon.
+The element renders a compact **share-icon button**; clicking it opens a modal
+`<dialog>` (dismiss with the × button, the backdrop, or `Esc`). The resource is
+fetched lazily on first open, so a page can carry many share buttons cheaply.
 
-Once open, the dialog calls the [datasette-acl](https://github.com/datasette/datasette-acl)
-JSON API to render "people with access" (avatars, role dropdowns, remove
-buttons) and a "General access" section, with an add-box that searches people
-(profiles) and groups (acl). Each action is its own
-fetch — grant / update / revoke — matching Google Docs' incremental behaviour.
+Once open, the dialog shows "people with access" (avatars, role dropdowns,
+remove buttons), a "General access" section, and an add-box that searches
+people (profiles) and groups (acl). Each action is its own fetch — grant /
+update / revoke — matching Google Docs' incremental behaviour. Actors who
+cannot manage the resource (`can_manage: false`) get a read-only roster: roles
+as tags, no add-box, no remove buttons.
 
 ### Attributes
 
@@ -74,9 +68,8 @@ general-access wildcard (`*` / `_signed_in`).
 
 The bundle is built with and served via
 [datasette-vite](https://github.com/datasette/datasette-vite). It is **not**
-injected site-wide — a host plugin opts in so the dialog only loads on pages
-that use it. Call the `datasette_share_assets(datasette)` helper from your
-plugin's own asset hooks:
+injected site-wide — a host plugin opts in from its own asset hooks so the
+dialog only loads on pages that use it:
 
 ```python
 from datasette import hookimpl
@@ -96,37 +89,30 @@ def extra_css_urls(datasette, request):
     return datasette_share_assets(datasette)["css"]
 ```
 
-`datasette_share_assets(datasette)` returns
-`{"js": [{"url": …, "module": True}], "css": [url, …]}`. The `js` list is ready
-for Datasette's `extra_js_urls` hook; `css` for `extra_css_urls`. In
+The helper returns `{"js": [{"url": …, "module": True}], "css": [url, …]}`,
+ready for Datasette's `extra_js_urls` / `extra_css_urls` hooks. In
 datasette-vite dev mode the `js` list includes the Vite client (HMR) and `css`
-is empty (Vite injects CSS via JS) — your plugin code is identical in dev and
-prod.
-
-Svelte/Preact hosts that own their own Vite build can instead splice the URLs
-into their page template (the element is registered as soon as the module
-loads).
+is empty — your plugin code is identical in dev and prod. Hosts that own their
+own Vite build can instead splice the URLs into their page template.
 
 ## Capability probe
 
-So a host can set `features` without guessing which optional backends exist,
-the plugin exposes `GET /-/share/capabilities`:
+So a host can set `features` without guessing which optional backends exist:
 
-```json
-{"people": true, "groups": true, "public": true}
+```
+GET /-/share/capabilities  →  {"people": true, "groups": true, "public": true}
 ```
 
-- `people` — [datasette-user-profiles](https://github.com/datasette/datasette-user-profiles) installed (search + avatars)
-- `groups`, `public` — intrinsic to datasette-acl, always `true`
+`people` reflects whether
+[datasette-user-profiles](https://github.com/datasette/datasette-user-profiles)
+is installed (search + avatars); `groups` and `public` are intrinsic to
+datasette-acl. `share_capabilities()` is also importable if you prefer to
+compute the `features` string server-side.
 
-`share_capabilities(datasette)` is also importable if you prefer to compute the
-`features` string server-side.
+## Embedding in apps
 
-## Embedding
-
-### Inside a Svelte app (paper, places, sheets)
-
-Custom elements are just DOM, so a Svelte app renders the tag directly:
+A Svelte app (paper, places, sheets) renders the tag directly — attributes
+bind, and `onshare-*` props receive the events:
 
 ```svelte
 <datasette-acl-share-dialog
@@ -139,47 +125,12 @@ Custom elements are just DOM, so a Svelte app renders the tag directly:
 ></datasette-acl-share-dialog>
 ```
 
-### Plain server-rendered HTML (town, kanban, Jinja pages)
-
-No framework needed — include the bundle (via the helper above) and drop the
-tag into a template, wiring events with `addEventListener`:
-
-```html
-<datasette-acl-share-dialog
-  resource-type="places-list" parent="mydb" child="7"
-  resource-label="Lunch spots"
-></datasette-acl-share-dialog>
-<script type="module">
-  document.querySelector("datasette-acl-share-dialog")
-    .addEventListener("share-changed", () => console.log("sharing changed"));
-</script>
-```
-
-A Preact host (datasette-comments) embeds the same tag unchanged — the Svelte
-custom element is framework-agnostic.
+Preact hosts (datasette-comments) and plain Jinja pages embed the same tag
+unchanged, wiring events with `addEventListener`.
 
 > For a full walkthrough — modelling the acl resource type / actions / roles,
 > seeding grants, gating pages, plus web-component tips and a minimal end-to-end
 > plugin — see [`docs/integration-guide.md`](docs/integration-guide.md).
-
-## Graceful degradation
-
-The dialog adapts to whichever backends are installed:
-
-- **No datasette-user-profiles** → no people search and no avatars; grant rows
-  fall back to initials chips and the People tab is hidden (capability probe
-  reports `people: false`).
-- **Groups / General access** are intrinsic to datasette-acl and always
-  available.
-- When the current actor cannot manage a resource (`can_manage: false`), the
-  dialog renders read-only: roles show as tags, no add-box, no remove buttons.
-
-## Layout
-
-```
-datasette_acl_share/   Python package (built assets: static/gen + manifest.json)
-frontend/          Svelte 5 + TS source (Vite custom-element build)
-```
 
 ## Development
 
@@ -200,7 +151,7 @@ characters with the debug bar (Clark owns doc 1), and exercise the dialog — se
 `CLAUDE.md` for the full demo walkthrough.
 
 Built assets (`datasette_acl_share/static/`, `manifest.json`) are gitignored and
-produced by the build, matching the sibling Svelte plugins.
+produced by the build.
 
 ### Tests
 

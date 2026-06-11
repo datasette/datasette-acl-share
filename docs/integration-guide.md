@@ -266,7 +266,7 @@ To decide server-side, probe the capability endpoint this plugin ships:
 GET /-/share/capabilities  →  {"people": true, "groups": true, "public": true}
 ```
 
-or call `share_capabilities(datasette)` in Python. `people` reflects whether
+or call `share_capabilities()` in Python. `people` reflects whether
 user-profiles is installed; the others are always `true`.
 
 ---

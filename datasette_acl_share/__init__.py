@@ -39,7 +39,7 @@ def datasette_share_assets(datasette):
     }
 
 
-def share_capabilities(datasette=None):
+def share_capabilities():
     """Report which dialog sections the installed backends can support.
 
     ``people`` requires datasette-user-profiles; ``groups`` and ``public`` are
@@ -59,9 +59,9 @@ def share_capabilities(datasette=None):
     }
 
 
-async def capabilities_view(request, datasette):
+async def capabilities_view():
     """GET /-/share/capabilities → the capability probe as JSON (read-only)."""
-    return Response.json(share_capabilities(datasette))
+    return Response.json(share_capabilities())
 
 
 @hookimpl
