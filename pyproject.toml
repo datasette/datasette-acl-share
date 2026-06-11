@@ -1,6 +1,6 @@
 [project]
 name = "datasette-acl-share"
-version = "0.0.1a1"
+version = "0.0.1a2"
 description = "Reusable Google-Docs-style share dialog for Datasette (<datasette-acl-share-dialog>)"
 readme = "README.md"
 authors = [{name = "Alex Garcia"}]
