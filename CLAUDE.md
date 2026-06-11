@@ -76,7 +76,7 @@ just dev-with-hmr              # (terminal 2) datasette pointed at the dev serve
 
 npm --prefix frontend run test    # vitest (node + browser/chromium)
 npm --prefix frontend run check   # svelte-check + tsc (the frontend gate; keep at 0 errors)
-uv run pytest                     # python (run via `uv run --no-sync python -m pytest -q`)
+uv run pytest                     # python
 ```
 
 `DEV_PORT` is a Justfile variable (single source of truth), passed to vite via

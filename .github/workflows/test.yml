@@ -1,0 +1,49 @@
+name: Test
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: ${{ matrix.python-version }}
+      - uses: actions/setup-node@v6
+        with:
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: extractions/setup-just@v3
+      - name: Install frontend deps
+        run: npm install --prefix frontend
+      # The asset-helper tests read the built bundle's vite manifest
+      - name: Build frontend bundle
+        run: just frontend
+      - name: Backend tests
+        run: uv run pytest
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v6
+        with:
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install frontend deps
+        run: npm install --prefix frontend
+      - name: Type-check
+        run: npm run check --prefix frontend
+      # vitest runs a browser (chromium) suite alongside the node suite
+      - name: Install Playwright browsers
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Frontend tests
+        run: npm run test --prefix frontend
