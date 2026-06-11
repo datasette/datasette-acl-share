@@ -53,7 +53,6 @@
     child,
     "resource-label": resourceLabel,
     "actor-json": actorJson,
-    csrftoken,
     "api-base": apiBase,
     features,
     open: openAttr,
@@ -65,7 +64,6 @@
     child?: string;
     "resource-label"?: string;
     "actor-json"?: string;
-    csrftoken?: string;
     "api-base"?: string;
     features?: string;
     /** When set (non-"false"), open the modal on mount instead of waiting for a
@@ -97,7 +95,6 @@
   const api = $derived(
     new ShareApi({
       aclBase: apiBase || undefined,
-      csrftoken: csrftoken || undefined,
       // Thread the dialog's resource onto picker calls so the acl picker
       // endpoints can authorize a per-resource Manager (a doc owner with no
       // global `datasette-acl` admin) instead of rejecting them.

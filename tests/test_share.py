@@ -166,8 +166,7 @@ def test_capabilities_reflect_installed_plugins(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_capabilities_endpoint():
-    """GET /-/share/capabilities returns the probe as JSON (read-only, no CSRF
-    token needed under 1.0a30)."""
+    """GET /-/share/capabilities returns the probe as JSON (read-only)."""
     datasette = Datasette(memory=True)
     response = await datasette.client.get("/-/share/capabilities")
     assert response.status_code == 200

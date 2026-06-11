@@ -49,7 +49,7 @@ used). Light DOM (`shadow: "none"`), CSS selectors prefixed
 `datasette-acl-share-dialog__*`. Attributes are kebab-case.
 
 Attributes: `resource-type` (req), `parent` (req), `child`, `resource-label`,
-`actor-json`, `csrftoken`, `api-base`, `features` (`people,groups,public`),
+`actor-json`, `api-base`, `features` (`people,groups,public`),
 `open` (open on mount; non-`"false"`), `trigger-label`, `disabled`.
 
 Events (bubbling/composed): `share-granted`, `share-updated`, `share-revoked`,
@@ -63,7 +63,7 @@ sorted list of removed action names (`{"ok", "removed": [...]}`).
 ## Dependencies
 
 `pyproject.toml` requires **`datasette-acl>=0.5a1`** (the first tagged release
-with the JSON API). Also depends on `datasette>=1.0a20` and `datasette-vite`.
+with the JSON API) and `datasette-vite`.
 
 ## Dev & test
 

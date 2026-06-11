@@ -49,7 +49,6 @@ fetch — grant / update / revoke — matching Google Docs' incremental behaviou
 | `child` | – | resource identity part 2 (e.g. row id); omit for parent-only resources |
 | `resource-label` | – | display title shown in the dialog header |
 | `actor-json` | – | current actor as JSON (`{"id":"alice","kind":"user"}`) — used to mark "(you)" |
-| `csrftoken` | – | forwarded as `x-csrftoken` on writes; optional under datasette 1.0a30 (see [CSRF](#csrf)) |
 | `features` | – | comma list of sections to show (`people,groups,public`); empty/missing = all available |
 | `api-base` | – | override the acl API prefix (default `/-/acl/api`) |
 | `open` | – | when set (any value other than `false`), open the modal on mount instead of waiting for a trigger click |
@@ -122,28 +121,6 @@ the plugin exposes `GET /-/share/capabilities`:
 
 `share_capabilities(datasette)` is also importable if you prefer to compute the
 `features` string server-side.
-
-## CSRF
-
-datasette 1.0a30 replaced token-based `asgi-csrf` with the header-based
-`CrossOriginProtectionMiddleware` (it checks `Sec-Fetch-Site` / `Origin`).
-**Same-origin `fetch()` writes are accepted automatically with no token**, so:
-
-- The dialog's writes (grant / update / revoke against the acl JSON API) work
-  out of the box from any page served by the same Datasette instance.
-- You do **not** need to pass `csrftoken`. The attribute is still honoured and
-  forwarded as an `x-csrftoken` header for forward/back compat with older
-  asgi-csrf deployments; core 1.0a30 ignores it.
-- The acl JSON API endpoints (`/-/acl/api/resource/.../grant|revoke|update`)
-  rely on this core middleware — they carry no per-route CSRF logic. The
-  read endpoints and `GET /-/share/capabilities` are GETs and need no token.
-
-If you nonetheless want belt-and-braces, pass Datasette's `csrftoken()` (from a
-template or page data) into the element:
-
-```html
-<datasette-acl-share-dialog … csrftoken="{{ csrftoken() }}"></datasette-acl-share-dialog>
-```
 
 ## Embedding
 

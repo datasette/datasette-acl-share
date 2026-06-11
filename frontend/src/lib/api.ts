@@ -4,13 +4,6 @@
 //   acl       /-/acl/api/...        grants, groups, actors (the grant store)
 //   profiles  /-/profiles/api/...   people search (avatars / display names)
 //
-// CSRF (datasette 1.0a30): core replaced token-based asgi-csrf with the
-// header-based CrossOriginProtectionMiddleware (Sec-Fetch-Site + Origin). A
-// same-origin fetch() with credentials is accepted automatically, so no
-// X-CSRFToken token-fetching logic is required. We still forward an
-// `x-csrftoken` header on writes when the host supplies one (core ignores it;
-// kept for forward/back compat with older asgi-csrf deployments).
-
 import type {
   Actor,
   Capabilities,
@@ -45,8 +38,6 @@ export interface ShareApiOptions {
   aclBase?: string;
   /** profiles API prefix (default `/-/profiles/api`). */
   profilesBase?: string;
-  /** CSRF token to forward on writes (optional under 1.0a30). */
-  csrftoken?: string;
   /** The dialog's resource, threaded onto picker calls for per-resource authz. */
   resource?: ShareResource;
   /** Injectable fetch (for tests). Defaults to global `fetch`. */
@@ -98,14 +89,12 @@ function withQuery(path: string, params: Record<string, string | undefined>): st
 export class ShareApi {
   private readonly aclBase: string;
   private readonly profilesBase: string;
-  private readonly csrftoken?: string;
   private readonly resource?: ShareResource;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: ShareApiOptions = {}) {
     this.aclBase = options.aclBase || DEFAULT_ACL_BASE;
     this.profilesBase = options.profilesBase || DEFAULT_PROFILES_BASE;
-    this.csrftoken = options.csrftoken;
     this.resource = options.resource;
     // Bind so callers passing `globalThis.fetch` keep the right `this`.
     const f = options.fetch || globalThis.fetch;
@@ -149,10 +138,6 @@ export class ShareApi {
       "Content-Type": "application/json",
       Accept: "application/json",
     };
-    // Forward-compat CSRF header; core 1.0a30 ignores it (same-origin allowed).
-    if (this.csrftoken) {
-      headers["x-csrftoken"] = this.csrftoken;
-    }
     let response: Response;
     try {
       response = await this.fetchImpl(url, {

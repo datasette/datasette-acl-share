@@ -15,14 +15,6 @@ This module is the Python side of the plugin. It ships:
   intrinsic to datasette-acl and always reported true. The probe degrades
   gracefully: when profiles is absent the ``people`` flag is simply ``false``.
 
-CSRF (datasette 1.0a30): core replaced token-based ``asgi-csrf`` with the
-header-based ``CrossOriginProtectionMiddleware`` (Sec-Fetch-Site + Origin).
-Same-origin ``fetch()`` writes from the dialog are accepted automatically with
-no token, so this plugin (and the acl JSON API it talks to) carry no CSRF token
-plumbing. The element still accepts a ``csrftoken`` attribute and forwards it as
-``x-csrftoken`` for forward/back compat with older asgi-csrf deployments; core
-ignores it. The ``GET /-/share/capabilities`` endpoint is read-only and needs no
-token. See the README "CSRF" section.
 """
 
 from datasette import hookimpl, Response
@@ -108,10 +100,7 @@ def share_capabilities(datasette=None):
 
 
 async def capabilities_view(request, datasette):
-    """GET /-/share/capabilities → the capability probe as JSON.
-
-    Read-only; no CSRF token required (datasette 1.0a30 same-origin GETs).
-    """
+    """GET /-/share/capabilities → the capability probe as JSON (read-only)."""
     return Response.json(share_capabilities(datasette))
 
 

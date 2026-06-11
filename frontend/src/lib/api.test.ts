@@ -113,37 +113,6 @@ describe("ShareApi mutations", () => {
     });
   });
 
-  it("forwards the x-csrftoken header on writes when supplied", async () => {
-    const fetchMock = jsonFetch({ ok: true, grant: { principal: "actor", id: "x", role: null, actions: [], kind: "user" } });
-    const api = new ShareApi({
-      csrftoken: "tok-123",
-      fetch: fetchMock as unknown as typeof fetch,
-    });
-    await api.grant("t", "p", null, { actor_id: "x" });
-    const headers = lastCall(fetchMock)[1].headers as Record<string, string>;
-    expect(headers["x-csrftoken"]).toBe("tok-123");
-  });
-
-  it("does NOT send x-csrftoken when no token is configured", async () => {
-    const fetchMock = jsonFetch({ ok: true, grant: { principal: "actor", id: "x", role: null, actions: [], kind: "user" } });
-    const api = new ShareApi({ fetch: fetchMock as unknown as typeof fetch });
-    await api.grant("t", "p", null, { actor_id: "x" });
-    const headers = lastCall(fetchMock)[1].headers as Record<string, string>;
-    expect(headers["x-csrftoken"]).toBeUndefined();
-  });
-
-  it("never sends a csrftoken on GET requests", async () => {
-    const fetchMock = jsonFetch({ groups: [] });
-    const api = new ShareApi({
-      csrftoken: "tok-123",
-      fetch: fetchMock as unknown as typeof fetch,
-    });
-    await api.listGroups();
-    const headers = lastCall(fetchMock)[1].headers as Record<string, string>;
-    expect(headers["x-csrftoken"]).toBeUndefined();
-    expect(lastCall(fetchMock)[1].method).toBe("GET");
-  });
-
   it("update POSTs to the update endpoint", async () => {
     const fetchMock = jsonFetch({
       ok: true,

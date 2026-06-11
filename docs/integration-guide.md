@@ -25,7 +25,7 @@ to talk to. Most of the work below is actually datasette-acl modelling.
 
 ### Prerequisites
 
-- `datasette>=1.0a20`
+- `datasette>=1.0a30`
 - `datasette-acl` installed and its internal database available
   (`--internal internal.db` or equivalent persistent internal DB).
 - **Optional:** `datasette-user-profiles` — lights up People search + avatars /
@@ -37,7 +37,7 @@ you import from `datasette_acl` directly, so depend on it explicitly):
 
 ```toml
 dependencies = [
-    "datasette>=1.0a20",
+    "datasette>=1.0a30",
     "datasette-acl",
     "datasette-acl-share",
 ]
@@ -224,7 +224,6 @@ when present and not the literal string `"false"`.
 | `open` | — | When present and not `"false"`, open the modal on mount instead of waiting for a trigger click. |
 | `trigger-label` | — | Text shown next to the share icon on the trigger button. |
 | `disabled` | — | When present and not `"false"`, disable the trigger (e.g. the current actor can't share this resource). |
-| `csrftoken` | — | Legacy; forwarded as `x-csrftoken`. Not needed on datasette 1.0a30+ (see *CSRF*). |
 
 ### Event reference
 
@@ -272,15 +271,6 @@ user-profiles is installed; the others are always `true`.
 
 ---
 
-## CSRF
-
-On datasette 1.0a30+, core uses header-based cross-origin protection
-(Sec-Fetch-Site + Origin), so same-origin `fetch()` writes from the dialog are
-accepted **with no token** — you don't need to pass `csrftoken`. The attribute
-still exists and is forwarded as `x-csrftoken` for older asgi-csrf deployments;
-core ignores it. The `/-/share/capabilities` probe is read-only.
-
----
 
 ## Web component tips
 
