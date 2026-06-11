@@ -146,15 +146,15 @@ def test_capabilities_degrade_gracefully():
 
 def test_capabilities_reflect_installed_plugins(monkeypatch):
     """When profiles reports installed, the people flag flips on."""
-    import datasette_acl_share
+    import datasette.plugins
 
     monkeypatch.setattr(
-        datasette_acl_share,
-        "_installed_plugin_names",
-        lambda: {
-            "datasette-acl-share",
-            "datasette-user-profiles",
-        },
+        datasette.plugins,
+        "get_plugins",
+        lambda: [
+            {"name": "datasette-acl-share"},
+            {"name": "datasette-user-profiles"},
+        ],
     )
     caps = share_capabilities()
     assert caps == {

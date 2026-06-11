@@ -66,20 +66,6 @@ def datasette_share_assets(datasette):
     }
 
 
-def _installed_plugin_names():
-    """The set of installed Datasette plugin distribution names.
-
-    Imported lazily so importing this module never fails if Datasette's plugin
-    machinery is unavailable (it always is at runtime, but keep it defensive).
-    """
-    try:
-        from datasette.plugins import get_plugins
-
-        return {p.get("name") for p in get_plugins()}
-    except Exception:
-        return set()
-
-
 def share_capabilities(datasette=None):
     """Report which dialog sections the installed backends can support.
 
@@ -91,7 +77,12 @@ def share_capabilities(datasette=None):
     its flag rather than raising — so a host that probes before profiles is
     installed gets a usable (people-off) capability set.
     """
-    installed = _installed_plugin_names()
+    try:
+        from datasette.plugins import get_plugins
+
+        installed = {p.get("name") for p in get_plugins()}
+    except Exception:
+        installed = set()
     return {
         "people": PROFILES_PLUGIN in installed,
         "groups": True,
