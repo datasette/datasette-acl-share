@@ -1,5 +1,5 @@
 // Types mirroring the datasette-acl JSON API (see its docs/json-api.md;
-// includes the general-access-principals `principal_type` additions) and the
+// public audiences are first-class principal types) and the
 // datasette-user-profiles search API. These shapes are what the share dialog
 // component consumes.
 //
@@ -10,23 +10,21 @@
 /** Which kind of principal a grant or search hit refers to. */
 export type ActorKind = "user" | "group" | "public";
 
-/** The `principal` discriminator on grant entries. Wildcard "general access"
- * rows are stored server-side with a distinct principal_type of `public`, but
- * are still serialized as `principal: "actor"` entries (distinguished by
- * `kind: "public"`). */
-export type PrincipalType = "actor" | "group";
+/** The `principal` discriminator on grant entries. Public "general access"
+ * audiences are their own first-class principal (`principal: "public"`, with
+ * the audience name in `id`), additionally flagged `kind: "public"`. */
+export type PrincipalType = "actor" | "group" | "public";
 
-/** The optional `principal_type` body field on grant/update/revoke mutations.
- * When omitted the server infers it (a wildcard id → `public`, else `actor`).
- * Pass it explicitly to disambiguate a real user whose id collides with a
- * wildcard (e.g. a user literally named `_signed_in`). `"public"` with a
- * non-wildcard id is a 400. */
-export type GrantPrincipalType = "actor" | "public";
+/** A public "general access" audience — a *class* of caller, identified purely
+ * by `principal_type` with no id. `everyone` = anyone incl. anonymous;
+ * `authenticated` = any signed-in actor; `anonymous` = signed-out callers only
+ * (defined for completeness; not offered as a dialog option). */
+export type PublicAudience = "everyone" | "authenticated" | "anonymous";
 
-/** Wildcard principal ids used for the "General access" section.
- * `*` = anyone (anonymous/public); `_signed_in` = any logged-in actor.
- * (`_anonymous` exists in acl SQL but is not offered as a dialog option.) */
-export type WildcardPrincipal = "*" | "_signed_in" | "_anonymous";
+/** The `principal_type` body field on grant/update/revoke mutations. For an
+ * actor pass `"actor"` (with `actor_id`); for a group `"group"` (with
+ * `group_id`); for a public audience pass the audience type alone (no id). */
+export type GrantPrincipalType = "actor" | "group" | PublicAudience;
 
 /**
  * A role registered for a resource type, as returned in `ShareState.roles`.
@@ -46,13 +44,13 @@ export interface Role {
  * Mirrors the actor / group grant entries built by the acl API.
  *
  * Note: the acl API uses `id` for the principal identity (actor id, group id,
- * or wildcard string) and a separate `principal` discriminator — there is no
+ * or audience name) and a separate `principal` discriminator — there is no
  * nested `principal` object on the wire.
  */
 export interface Grant {
-  /** Discriminator: "actor" or "group". */
+  /** Discriminator: "actor", "group" or "public". */
   principal: PrincipalType;
-  /** The principal identity: actor id, stringified group id, or wildcard. */
+  /** The principal identity: actor id, stringified group id, or audience name. */
   id: string;
   /** Resolved friendly role name, or null when the action-set matches no role. */
   role: string | null;
@@ -108,10 +106,11 @@ export interface Group {
   member_count: number;
 }
 
-/** A principal to grant/revoke/update against. Exactly one of the id fields.
- * `principal_type` only applies with `actor_id` (see {@link GrantPrincipalType});
- * the dialog always sends it so a wildcard-named user id is never mistaken for
- * a general-access wildcard (and vice versa). */
+/** A principal to grant/revoke/update against: exactly one of an actor
+ * (`actor_id`), a group (`group_id`), or a public audience (`principal_type`
+ * naming the audience, with neither id). The dialog always sends an explicit
+ * `principal_type` so an actor whose id happens to match an audience name is
+ * never mistaken for a general-access audience (and vice versa). */
 export interface Principal {
   actor_id?: string;
   group_id?: number | string;
@@ -145,7 +144,7 @@ export interface RevokeResponse {
 /**
  * Which optional backends are available, so the dialog can show/hide sections.
  * `groups` is part of acl itself and so is always assumed present; `people`
- * (profiles search) is optional; `public` (general-access wildcards) is always
+ * (profiles search) is optional; `public` (general-access audiences) is always
  * supported by acl.
  */
 export interface Capabilities {

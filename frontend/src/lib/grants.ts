@@ -1,25 +1,28 @@
 // Pure helpers over the acl grant model, factored out of ShareDialog.svelte so
 // they're unit-testable without mounting the component.
 
-import type { Grant, Role, WildcardPrincipal } from "./types";
+import type { Grant, Role, PublicAudience } from "./types";
 
-/** The wildcard principal ids the dialog's General-access section offers.
- * Both are required by DECISIONS.md: `*` (Anyone, incl. anonymous) and
- * `_signed_in` (Anyone signed in). */
-export const GENERAL_ACCESS_PRINCIPALS: WildcardPrincipal[] = ["*", "_signed_in"];
+/** The public audiences the dialog's General-access section offers:
+ * `everyone` (Anyone, incl. anonymous) and `authenticated` (Anyone signed in).
+ * (`anonymous` exists in acl but is not offered as a dialog option.) */
+export const GENERAL_ACCESS_PRINCIPALS: PublicAudience[] = [
+  "everyone",
+  "authenticated",
+];
 
-/** True when a grant is a wildcard "General access" row. The server tags
- * these `kind: "public"` (stored with principal_type `public`); matching on
- * kind only — never on the raw id — keeps a real user who happens to be named
- * `*` / `_signed_in` (kind `user`) in the people roster. */
+/** True when a grant is a public "General access" audience. The server tags
+ * these `principal: "public"` / `kind: "public"`; matching on kind only —
+ * never on the raw id — keeps a real user whose id happens to match an
+ * audience name (kind `user`) in the people roster. */
 export function isWildcardGrant(grant: Grant): boolean {
   return grant.kind === "public";
 }
 
 /**
- * The current wildcard grant for the resource, if any. Only one is meaningful
- * at a time in the Google-Docs-style control (the most permissive wins), so we
- * return the first `kind:"public"` grant found.
+ * The current public audience grant for the resource, if any. Only one is
+ * meaningful at a time in the Google-Docs-style control (the most permissive
+ * wins), so we return the first `kind:"public"` grant found.
  */
 export function currentWildcardGrant(grants: Grant[]): Grant | null {
   return grants.find(isWildcardGrant) ?? null;

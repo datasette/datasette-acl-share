@@ -9,15 +9,15 @@ A reusable, Google-Docs-style **share dialog** for Datasette, shipped as one
 framework-agnostic Svelte 5 custom element: `<datasette-acl-share-dialog>`. It
 is the UI layer over the **datasette-acl JSON API** (the grant store). It does
 *not* implement any policy itself — it reads/writes grants, roles, groups and
-"general access" wildcards over HTTP.
+"general access" public audiences over HTTP.
 
 Two optional backends light up extra UI:
 - **datasette-user-profiles** → people search + avatars/display names. Absent →
   initials chips, no People search.
 - (Agents were removed — see "What's left".)
 
-`groups` and "general access" (`*` / `_signed_in`) are intrinsic to acl and
-always available.
+`groups` and "general access" (the `everyone` / `authenticated` public
+audiences) are intrinsic to acl and always available.
 
 ## Architecture / layout
 
@@ -60,26 +60,28 @@ update, groups + actors pickers). Full spec: `../datasette-acl/docs/json-api.md`
 Notable: the **read endpoint is manager-only** (v1) and `revoke` returns the
 sorted list of removed action names (`{"ok", "removed": [...]}`).
 
-**`principal_type`** (acl `general-access-principals` branch): every mutation
-the dialog sends includes an explicit `principal_type` — `"public"` for the
-General-access wildcards (`*` / `_signed_in`), `"actor"` for everyone else —
-so a real user whose id collides with a wildcard name is never confused with a
-general-access grant. The GET response shape is unchanged (wildcards are still
-`principal: "actor"` entries flagged `kind: "public"`); `isWildcardGrant`
-matches on `kind` only, never the raw id. 0.5a1 servers ignore the extra body
-field, so this is backward-compatible.
+**`principal_type` is the whole principal model** (acl retired wildcard ids):
+every grant targets exactly one of an **actor** (`actor_id`, `principal_type:
+"actor"`), a **group** (`group_id`), or a **public audience** named purely by
+`principal_type` with *no id* — `everyone` (anyone, incl. anonymous),
+`authenticated` (any signed-in actor), or `anonymous` (signed-out only). The
+dialog offers `everyone` / `authenticated` in its General-access control. The
+GET response renders an audience as `principal: "public"`, `id: "<audience>"`,
+`kind: "public"`; `isWildcardGrant` matches on `kind` only, never the raw id,
+so a real actor whose id happens to match an audience name stays in the People
+roster. Mutations send the audience as `{"principal_type": "<audience>"}`.
 
 ## Dependencies
 
 `pyproject.toml` requires **`datasette-acl>=0.5a1`** (the first tagged release
-with the JSON API) and `datasette-vite`. The `principal_type` mutation field
-ships in acl's `general-access-principals` branch (unreleased); bump the floor
-when it's tagged. Until then `just dev` installs acl from the **local
-checkout** (`uv pip install -e ../datasette-acl` into the venv + `uv run
---no-sync`) because the demo's seed code passes the `principal_type=` kwarg to
-acl's `grant()` helper. (An overlay `--with-editable` doesn't work while the
-checkout still reports version 0.5a1 — uv treats the locked PyPI 0.5a1 as
-already satisfying it.)
+with the JSON API) and `datasette-vite`. The first-class public-audience
+principal types (and acl's `grant()` taking a `Principal` object) ship on acl's
+unreleased `general-access-principals` work; bump the floor when it's tagged.
+Until then `just dev` installs acl from the **local checkout** (`uv pip install
+-e ../datasette-acl` into the venv + `uv run --no-sync`) because the demo's seed
+code builds `Principal.actor/.group/.public(...)` from acl's current API. (An
+overlay `--with-editable` doesn't work while the checkout still reports version
+0.5a1 — uv treats the locked PyPI 0.5a1 as already satisfying it.)
 
 ## Dev & test
 
@@ -116,7 +118,7 @@ A dev-only plugin that gives the dialog a real resource:
   - 4 daily-planet group (Editor) · 5 gotham-gazette group (Viewer)
   - 6 crossover — both newsrooms (DP Editor + GG Viewer)
   - 7 named people only — clark + lois (Lois individually, *not* her newsroom)
-  - 8 public — `_signed_in` Viewer (any logged-in actor, not anon)
+  - 8 public — `authenticated` Viewer (any logged-in actor, not anon)
   Owners are spread across the cast (clark & lois own two each; bruce, selina,
   alfred, jimmy one each) — not everything is clark's.
 - `/sample-docs` (index) and `/sample-docs/<id>` (one doc, embeds the dialog).
@@ -154,9 +156,10 @@ Lois → doc 1 now appears on her index and opens. Or share Viewer with the
   sharing shapes, gotham newsrooms wired as acl dynamic groups, and an index
   that shows each actor's role.
 - Plugin-author integration guide at `docs/integration-guide.md`.
-- Aligned to acl's `general-access-principals` branch: explicit
-  `principal_type` on all mutations (dialog + demo seeding), kind-only
-  wildcard detection.
+- Aligned to acl's first-class public-audience model (`everyone` /
+  `authenticated` / `anonymous`; wildcard ids retired): mutations send the
+  audience as `principal_type` with no id, demo seeding builds `Principal`
+  objects, and general-access detection is kind-only.
 - All suites green: frontend check (0 errors), vitest, pytest.
 
 ## What's left / deferred

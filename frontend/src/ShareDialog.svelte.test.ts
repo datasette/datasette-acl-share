@@ -565,14 +565,14 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
 // --- general access --------------------------------------------------------
 
 describe("<datasette-acl-share-dialog> general access", () => {
-  it("choosing 'Anyone signed in' then a role issues a _signed_in grant", async () => {
+  it("choosing 'Anyone signed in' then a role issues an authenticated grant", async () => {
     on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
       const req = JSON.parse(init.body as string);
       return json({
         ok: true,
         grant: {
-          principal: "actor",
-          id: req.actor_id,
+          principal: "public",
+          id: req.principal_type,
           role: req.role,
           actions: ["read", "write"],
           kind: "public",
@@ -590,35 +590,34 @@ describe("<datasette-acl-share-dialog> general access", () => {
       const g = calls.find((c) => c.url.endsWith("/grant"));
       expect(g).toBeTruthy();
       expect(g!.body).toMatchObject({
-        actor_id: "_signed_in",
-        principal_type: "public",
+        principal_type: "authenticated",
         role: "Editor",
       });
     });
     await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(1));
   });
 
-  it("offers BOTH 'Anyone' (*) and 'Anyone signed in' (_signed_in) options", async () => {
+  it("offers BOTH 'Anyone' (everyone) and 'Anyone signed in' (authenticated) options", async () => {
     on("/resource/", () => json(STATE));
     mount(BASE_ATTRS);
     const principal = page.getByRole("combobox", { name: "General access", exact: true });
     await expect.element(principal).toBeInTheDocument();
     const sel = principal.element() as HTMLSelectElement;
     const values = Array.from(sel.options).map((o) => o.value);
-    expect(values).toContain("*");
-    expect(values).toContain("_signed_in");
+    expect(values).toContain("everyone");
+    expect(values).toContain("authenticated");
     expect(values).toContain(""); // Restricted
   });
 
-  it("an existing wildcard grant pre-selects the control", async () => {
+  it("an existing public-audience grant pre-selects the control", async () => {
     on("/resource/", () =>
       json({
         ...STATE,
         grants: [
           ...STATE.grants,
           {
-            principal: "actor",
-            id: "*",
+            principal: "public",
+            id: "everyone",
             role: "Viewer",
             actions: ["read"],
             kind: "public",
@@ -630,17 +629,17 @@ describe("<datasette-acl-share-dialog> general access", () => {
     const principal = page.getByRole("combobox", { name: "General access", exact: true });
     await expect.element(principal).toBeInTheDocument();
     await vi.waitFor(() =>
-      expect((principal.element() as HTMLSelectElement).value).toBe("*"),
+      expect((principal.element() as HTMLSelectElement).value).toBe("everyone"),
     );
     const role = page.getByRole("combobox", { name: "General access role" });
     await vi.waitFor(() =>
       expect((role.element() as HTMLSelectElement).value).toBe("Viewer"),
     );
-    // Wildcard grant is NOT rendered in the people-with-access list.
-    expect(document.querySelectorAll("[data-principal-key='actor:*']").length).toBe(0);
+    // Audience grant is NOT rendered in the people-with-access list.
+    expect(document.querySelectorAll("[data-principal-key='public:everyone']").length).toBe(0);
   });
 
-  it("switching to Restricted revokes the wildcard grant", async () => {
+  it("switching to Restricted revokes the public-audience grant", async () => {
     on("/resource/paper-doc/mydb/42/revoke", () => json({ ok: true, removed: 1 }));
     on("/resource/", () =>
       json({
@@ -648,8 +647,8 @@ describe("<datasette-acl-share-dialog> general access", () => {
         grants: [
           ...STATE.grants,
           {
-            principal: "actor",
-            id: "_signed_in",
+            principal: "public",
+            id: "authenticated",
             role: "Viewer",
             actions: ["read"],
             kind: "public",
@@ -661,7 +660,7 @@ describe("<datasette-acl-share-dialog> general access", () => {
     const principal = page.getByRole("combobox", { name: "General access", exact: true });
     await expect.element(principal).toBeInTheDocument();
     await vi.waitFor(() =>
-      expect((principal.element() as HTMLSelectElement).value).toBe("_signed_in"),
+      expect((principal.element() as HTMLSelectElement).value).toBe("authenticated"),
     );
     await principal.selectOptions("Restricted");
 
@@ -669,8 +668,7 @@ describe("<datasette-acl-share-dialog> general access", () => {
       const r = calls.find((c) => c.url.endsWith("/revoke"));
       expect(r).toBeTruthy();
       expect(r!.body).toMatchObject({
-        actor_id: "_signed_in",
-        principal_type: "public",
+        principal_type: "authenticated",
       });
     });
     await vi.waitFor(() =>

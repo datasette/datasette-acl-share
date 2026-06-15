@@ -73,25 +73,25 @@ describe("orderGrants", () => {
 });
 
 describe("general-access helpers", () => {
-  it("offers BOTH wildcard principals (* and _signed_in)", () => {
-    expect(GENERAL_ACCESS_PRINCIPALS).toEqual(["*", "_signed_in"]);
+  it("offers BOTH public audiences (everyone and authenticated)", () => {
+    expect(GENERAL_ACCESS_PRINCIPALS).toEqual(["everyone", "authenticated"]);
   });
 
   it("isWildcardGrant matches on public kind only", () => {
-    expect(isWildcardGrant(grant({ id: "*", kind: "public" }))).toBe(true);
-    expect(isWildcardGrant(grant({ id: "_signed_in", kind: "public" }))).toBe(true);
-    // A real user whose id collides with a wildcard (principal_type "actor",
-    // so kind "user") belongs in the people roster, not General access.
-    expect(isWildcardGrant(grant({ id: "*", kind: "user" }))).toBe(false);
+    expect(isWildcardGrant(grant({ id: "everyone", kind: "public" }))).toBe(true);
+    expect(isWildcardGrant(grant({ id: "authenticated", kind: "public" }))).toBe(true);
+    // A real user whose id collides with an audience name (principal_type
+    // "actor", so kind "user") belongs in the people roster, not General access.
+    expect(isWildcardGrant(grant({ id: "everyone", kind: "user" }))).toBe(false);
     expect(isWildcardGrant(grant({ id: "alice", kind: "user" }))).toBe(false);
   });
 
   it("currentWildcardGrant returns the public grant or null", () => {
     const grants: Grant[] = [
       grant({ id: "alice", role: "Editor", kind: "user" }),
-      grant({ id: "_signed_in", role: "Viewer", kind: "public" }),
+      grant({ id: "authenticated", role: "Viewer", kind: "public" }),
     ];
-    expect(currentWildcardGrant(grants)?.id).toBe("_signed_in");
+    expect(currentWildcardGrant(grants)?.id).toBe("authenticated");
     expect(currentWildcardGrant([grant({ id: "bob", kind: "user" })])).toBeNull();
   });
 

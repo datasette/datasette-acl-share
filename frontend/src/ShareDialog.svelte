@@ -43,8 +43,8 @@
     GrantRequest,
     Group,
     Principal,
+    PublicAudience,
     ShareState,
-    WildcardPrincipal,
   } from "./lib/types";
 
   let {
@@ -200,12 +200,13 @@
     if (grant.principal === "group") {
       return { group_id: grant.id };
     }
-    // Explicit principal_type so mutations on a wildcard row never touch a
-    // like-named real user's grant (and vice versa).
-    return {
-      actor_id: grant.id,
-      principal_type: grant.kind === "public" ? "public" : "actor",
-    };
+    // A public audience is identified by its principal_type alone (no id).
+    if (grant.kind === "public") {
+      return { principal_type: grant.id as PublicAudience };
+    }
+    // Explicit principal_type so mutations on an actor never touch a like-named
+    // general-access audience (and vice versa).
+    return { actor_id: grant.id, principal_type: "actor" };
   }
 
   function isYou(grant: Grant): boolean {
@@ -217,11 +218,10 @@
   }
 
   function rowLabel(grant: Grant): string {
-    const base = grant.display_name?.trim() || grant.id;
     if (grant.kind === "public") {
-      return grant.id === "*" ? "Anyone" : "Anyone signed in";
+      return grant.display_name?.trim() || audienceLabel(grant.id);
     }
-    return base;
+    return grant.display_name?.trim() || grant.id;
   }
 
   function rowSubLabel(grant: Grant): string | null {
@@ -680,15 +680,23 @@
 
   // --- general access ------------------------------------------------------
 
-  // The "Restricted" sentinel for the principal selector (no wildcard grant).
+  // The "Restricted" sentinel for the principal selector (no audience grant).
   const RESTRICTED = "" as const;
 
-  // The current wildcard grant (kind:"public"), reflected into the controls.
+  // Human label for a public audience principal_type.
+  function audienceLabel(audience: string): string {
+    if (audience === "everyone") return "Anyone";
+    if (audience === "authenticated") return "Anyone signed in";
+    if (audience === "anonymous") return "Anyone signed out";
+    return audience;
+  }
+
+  // The current public audience grant (kind:"public"), reflected into controls.
   let wildcard = $derived(currentWildcardGrant(share?.grants ?? []));
 
-  // Which wildcard principal is currently active ("" = Restricted).
-  let generalPrincipal = $derived<WildcardPrincipal | "">(
-    wildcard ? (wildcard.id as WildcardPrincipal) : RESTRICTED,
+  // Which public audience is currently active ("" = Restricted).
+  let generalPrincipal = $derived<PublicAudience | "">(
+    wildcard ? (wildcard.id as PublicAudience) : RESTRICTED,
   );
 
   // The current general-access role (only meaningful when not Restricted).
@@ -698,22 +706,20 @@
   let generalBusy = $state(false);
   let generalError = $state<string | null>(null);
 
-  function generalPrincipalLabel(p: WildcardPrincipal | ""): string {
-    if (p === "*") return "Anyone";
-    if (p === "_signed_in") return "Anyone signed in";
-    return "Restricted";
+  function generalPrincipalLabel(p: PublicAudience | ""): string {
+    return p === RESTRICTED ? "Restricted" : audienceLabel(p);
   }
 
   async function onGeneralPrincipalChange(event: Event) {
     const value = (event.currentTarget as HTMLSelectElement).value as
-      | WildcardPrincipal
+      | PublicAudience
       | "";
     if (value === RESTRICTED) {
       await revokeWildcard();
       return;
     }
-    // Granting a new wildcard principal: if switching from another wildcard,
-    // revoke the old one first so only one general-access row exists.
+    // Granting a new audience: if switching from another audience, revoke the
+    // old one first so only one general-access row exists.
     const role = generalRole || defaultPickerRole(share?.roles ?? []) || "";
     const previous = wildcard;
     await setWildcard(value, role, previous);
@@ -727,7 +733,7 @@
   }
 
   async function setWildcard(
-    principal: WildcardPrincipal,
+    principal: PublicAudience,
     role: string,
     revokePrevious: Grant | null,
   ) {
@@ -737,21 +743,19 @@
     try {
       if (revokePrevious && revokePrevious.id !== principal) {
         await api.revoke(resourceType, parent, child ?? null, {
-          actor_id: revokePrevious.id,
-          principal_type: "public",
+          principal_type: revokePrevious.id as PublicAudience,
         });
       }
       const grant = await api.grant(resourceType, parent, child ?? null, {
-        actor_id: principal,
+        principal_type: principal,
         role,
-        principal_type: "public",
       });
       if (share) {
         const without = share.grants.filter((g) => g.kind !== "public");
         share.grants = [...without, grant];
       }
       dispatch("share-granted", {
-        principal: "actor",
+        principal: "public",
         id: grant.id,
         role: grant.role,
       });
@@ -771,13 +775,12 @@
     generalError = null;
     try {
       await api.revoke(resourceType, parent, child ?? null, {
-        actor_id: grant.id,
-        principal_type: "public",
+        principal_type: grant.id as PublicAudience,
       });
       if (share) {
         share.grants = share.grants.filter((g) => g.kind !== "public");
       }
-      dispatch("share-revoked", { principal: "actor", id: grant.id });
+      dispatch("share-revoked", { principal: "public", id: grant.id });
       dispatch("share-changed", {});
     } catch (err) {
       generalError = errorMessage(err, "Couldn't change general access");
@@ -1131,8 +1134,8 @@
                 onchange={onGeneralPrincipalChange}
               >
                 <option value={RESTRICTED}>Restricted</option>
-                <option value="_signed_in">Anyone signed in</option>
-                <option value="*">Anyone</option>
+                <option value="authenticated">Anyone signed in</option>
+                <option value="everyone">Anyone</option>
               </select>
             {:else}
               <span class="datasette-acl-share-dialog__name"
@@ -1142,7 +1145,7 @@
             <span class="datasette-acl-share-dialog__sub">
               {#if generalPrincipal === RESTRICTED}
                 Only people with access can open
-              {:else if generalPrincipal === "*"}
+              {:else if generalPrincipal === "everyone"}
                 Anyone on the internet can access
               {:else}
                 Anyone signed in can access

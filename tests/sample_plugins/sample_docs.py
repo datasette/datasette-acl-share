@@ -197,12 +197,12 @@ DOCUMENTS = [
         ],
     },
     {
-        # Public to anyone signed in: a press release. Uses the wildcard
-        # `_signed_in` principal rather than a specific actor or group.
+        # Public to anyone signed in: a press release. Grants the
+        # `authenticated` public audience rather than a specific actor or group.
         "id": "8",
         "title": "Press Release — Hobbs Bay Seawall Reopening",
         "owner": "jimmy",
-        "shares": [{"actor": "_signed_in", "role": "Viewer"}],
+        "shares": [{"public": "authenticated", "role": "Viewer"}],
         "body": [
             "FOR IMMEDIATE RELEASE — The Hobbs Bay promenade reopens Saturday "
             "following overnight repairs that held through this week's storm "
@@ -349,17 +349,17 @@ async def _ensure_seed_grants(datasette):
     guaranteed.
 
     A doc's optional ``shares`` list holds dicts with a ``role`` plus exactly one
-    of ``actor`` (an actor id, or a wildcard like ``_signed_in`` / ``*``) or
-    ``group`` (a group name, resolved to its id).
+    of ``actor`` (an actor id), ``group`` (a group name, resolved to its id), or
+    ``public`` (a public audience: ``everyone`` / ``authenticated`` /
+    ``anonymous``).
 
-    Actor grants pass an explicit ``principal_type`` (``"public"`` for wildcard
-    ids, ``"actor"`` otherwise) rather than relying on acl's inference — the
-    same discipline the dialog itself follows.
+    Every grant names its principal explicitly via a :class:`Principal` —
+    ``Principal.actor`` / ``.group`` / ``.public`` — the same discipline the
+    dialog itself follows.
     """
     if getattr(datasette, "_sample_docs_seeded", False):
         return
-    from datasette_acl.grants import grant
-    from datasette_acl.utils import PUBLIC_PRINCIPALS
+    from datasette_acl.grants import grant, Principal
 
     db = datasette.get_internal_database()
     for doc in DOCUMENTS:
@@ -367,35 +367,26 @@ async def _ensure_seed_grants(datasette):
             datasette,
             "sample-doc",
             doc["id"],
-            actor_id=doc["owner"],
-            principal_type="actor",
+            principal=Principal.actor(doc["owner"]),
             role="Manager",
             by_actor="sample-docs-seed",
         )
         for share in doc.get("shares", []):
             if "group" in share:
                 group_id = await _resolve_group_id(db, share["group"])
-                await grant(
-                    datasette,
-                    "sample-doc",
-                    doc["id"],
-                    group_id=group_id,
-                    role=share["role"],
-                    by_actor="sample-docs-seed",
-                )
+                principal = Principal.group(group_id)
+            elif "public" in share:
+                principal = Principal.public(share["public"])
             else:
-                actor = share["actor"]
-                await grant(
-                    datasette,
-                    "sample-doc",
-                    doc["id"],
-                    actor_id=actor,
-                    principal_type=(
-                        "public" if actor in PUBLIC_PRINCIPALS else "actor"
-                    ),
-                    role=share["role"],
-                    by_actor="sample-docs-seed",
-                )
+                principal = Principal.actor(share["actor"])
+            await grant(
+                datasette,
+                "sample-doc",
+                doc["id"],
+                principal=principal,
+                role=share["role"],
+                by_actor="sample-docs-seed",
+            )
     datasette._sample_docs_seeded = True
 
 

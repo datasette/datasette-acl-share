@@ -30,7 +30,7 @@ to talk to. Most of the work below is actually datasette-acl modelling.
   (`--internal internal.db` or equivalent persistent internal DB).
 - **Optional:** `datasette-user-profiles` — lights up People search + avatars /
   display names. Absent → the dialog falls back to initials chips and hides the
-  People search tab. Groups and "general access" wildcards work regardless.
+  People search tab. Groups and "general access" audiences work regardless.
 
 Declare both in your `pyproject.toml` (acl-share pulls acl transitively, but
 you import from `datasette_acl` directly, so depend on it explicitly):
@@ -120,19 +120,19 @@ Python helper (idempotent). Do it **lazily on first request**, not in
 startup order isn't guaranteed:
 
 ```python
-from datasette_acl.grants import grant
+from datasette_acl.grants import grant, Principal
 
-await grant(datasette, "my-doc", doc_id, actor_id=owner_id, principal_type="actor", role="Manager", by_actor="my-plugin-seed")
-# group grant: pass group_id=<int> instead of actor_id (resolve the id by name first)
-# wildcard:    actor_id="_signed_in" (any logged-in actor) or "*" (anyone) or "_anonymous",
-#              with principal_type="public"
+await grant(datasette, "my-doc", doc_id, principal=Principal.actor(owner_id), role="Manager", by_actor="my-plugin-seed")
+# group grant:     principal=Principal.group(<int>)  (resolve the id by name first)
+# public audience: principal=Principal.public("authenticated")  # any logged-in actor
+#                  also "everyone" (anyone, incl. anonymous) or "anonymous" (signed-out only)
 ```
 
-`principal_type` (`"actor"` or `"public"`, optional) pins how the principal is
-stored. Without it acl infers from the id — a wildcard id becomes a `public`
-grant, anything else an `actor` grant — which is wrong exactly when a real
-user's id collides with a wildcard name. Pass it explicitly, as the dialog
-itself does on every mutation.
+Every grant names exactly one `Principal` — an actor, a group, or a public
+audience. Audiences are a *class* of caller identified purely by their type
+(`everyone` / `authenticated` / `anonymous`) with **no id**, so there's no
+reserved id namespace: an actor literally named `everyone` is just an ordinary
+actor, never confused with the audience.
 
 ### 1e. Gate your pages on the actions
 
@@ -260,7 +260,7 @@ document.querySelector("datasette-acl-share-dialog")
 ## Capabilities & the `features` attribute
 
 The dialog shows three optional sections: **People** search, **Groups**, and
-**general access** (public wildcards). People requires
+**general access** (public audiences). People requires
 `datasette-user-profiles`; groups and public are intrinsic to acl.
 
 You usually don't need to set `features` — the dialog enables what's available.
@@ -359,9 +359,9 @@ def datasette_acl_roles(datasette):
 async def _seed(datasette):
     if getattr(datasette, "_seeded", False):
         return
-    from datasette_acl.grants import grant
+    from datasette_acl.grants import grant, Principal
     for doc_id, doc in DOCS.items():
-        await grant(datasette, "my-doc", doc_id, actor_id=doc["owner"], principal_type="actor", role="Manager", by_actor="seed")
+        await grant(datasette, "my-doc", doc_id, principal=Principal.actor(doc["owner"]), role="Manager", by_actor="seed")
     datasette._seeded = True
 
 async def doc_page(request, datasette):

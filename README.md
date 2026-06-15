@@ -5,7 +5,7 @@ framework-agnostic Svelte 5 custom element: `<datasette-acl-share-dialog>`.
 
 One component, embedded by every document plugin (paper, places, sheets, …). It
 is the UI layer over the [datasette-acl](https://github.com/datasette/datasette-acl)
-JSON API — grants, roles, groups, and "general access" wildcards. If
+JSON API — grants, roles, groups, and "general access" audiences. If
 datasette-user-profiles is installed the dialog adds people search and avatars;
 without it, it degrades gracefully to initials chips with no People search.
 
@@ -61,8 +61,8 @@ The element dispatches bubbling, composed `CustomEvent`s so hosts can react
 | `share-revoked` | `{principal, id}` |
 | `share-changed` | `{}` — fired after any mutation (coarse) |
 
-`principal` is `"actor"` or `"group"`; `id` is the actor id, group id, or a
-general-access wildcard (`*` / `_signed_in`).
+`principal` is `"actor"`, `"group"`, or `"public"`; `id` is the actor id, group
+id, or a general-access audience name (`everyone` / `authenticated`).
 
 ## Including the bundle (opt-in)
 
