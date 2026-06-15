@@ -7,6 +7,7 @@
 // without a DOM.
 
 import type { ActorKind } from "./types";
+import { ICON_GLOBE, ICON_PEOPLE } from "./icons";
 
 /**
  * Derive up-to-two-character initials from a display name (or, failing that,
@@ -58,15 +59,16 @@ export function avatarColor(key: string | null | undefined): string {
 }
 
 /**
- * The single-character badge overlaid on an avatar to disambiguate the
- * principal kind. Users get no badge (the avatar/initials are enough).
+ * The icon badge overlaid on an avatar to disambiguate the principal kind,
+ * as an inline-SVG string for `{@html}`. Users get no badge (the avatar /
+ * initials are enough).
  */
 export function kindBadge(kind: ActorKind): string | null {
   switch (kind) {
     case "group":
-      return "\u{1F465}"; // 👥
+      return ICON_PEOPLE;
     case "public":
-      return "\u{1F310}"; // 🌐
+      return ICON_GLOBE;
     default:
       return null;
   }

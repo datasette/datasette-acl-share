@@ -11,6 +11,7 @@
 <script lang="ts">
   import { ShareApi, ShareApiError, capabilitiesFromFeatures } from "./lib/api";
   import { avatarColor, initials, kindBadge } from "./lib/avatar";
+  import { ICON_GLOBE, ICON_LOCK, ICON_PEOPLE } from "./lib/icons";
   import {
     currentWildcardGrant,
     defaultPickerRole,
@@ -921,9 +922,9 @@
                         class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__result-avatar"
                         style:background-color={avatarColor(opt.id)}
                         aria-hidden="true"
-                        >{opt.kind === "group"
-                          ? "👥"
-                          : initials(opt.label)}</span
+                        >{#if opt.kind === "group"}{@html ICON_PEOPLE}{:else}{initials(
+                            opt.label,
+                          )}{/if}</span
                       >
                       <span class="datasette-acl-share-dialog__result-text">
                         <span class="datasette-acl-share-dialog__name"
@@ -978,7 +979,9 @@
                   class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__pill-avatar"
                   style:background-color={avatarColor(pill.id)}
                   aria-hidden="true"
-                  >{pill.kind === "group" ? "👥" : initials(pill.label)}</span
+                  >{#if pill.kind === "group"}{@html ICON_PEOPLE}{:else}{initials(
+                      pill.label,
+                    )}{/if}</span
                 >
                 <span class="datasette-acl-share-dialog__pill-label"
                   >{pill.label}</span
@@ -1046,7 +1049,7 @@
               {#if badge(grant.kind)}
                 <span
                   class="datasette-acl-share-dialog__kind-badge"
-                  title={grant.kind}>{badge(grant.kind)}</span
+                  title={grant.kind}>{@html badge(grant.kind)}</span
                 >
               {/if}
             </span>
@@ -1121,7 +1124,7 @@
               : avatarColor(generalPrincipal)}
             aria-hidden="true"
           >
-            {generalPrincipal === RESTRICTED ? "🔒" : "🌐"}
+            {#if generalPrincipal === RESTRICTED}{@html ICON_LOCK}{:else}{@html ICON_GLOBE}{/if}
           </span>
 
           <span class="datasette-acl-share-dialog__general-text">
