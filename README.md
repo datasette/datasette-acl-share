@@ -9,6 +9,8 @@ JSON API — grants, roles, groups, and "general access" audiences. If
 datasette-user-profiles is installed the dialog adds people search and avatars;
 without it, it degrades gracefully to initials chips with no People search.
 
+<p align="center"><img src="docs/screenshots/groups.png" alt="The share dialog open on a document, showing a person and two groups with role dropdowns and a General access control" width="560"></p>
+
 ## Usage
 
 Drop the tag anywhere — inside a Svelte/Preact app, or in plain server-rendered
@@ -33,6 +35,17 @@ people (profiles) and groups (acl). Each action is its own fetch — grant /
 update / revoke — matching Google Docs' incremental behaviour. Actors who
 cannot manage the resource (`can_manage: false`) get a read-only roster: roles
 as tags, no add-box, no remove buttons.
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/people-search.png" alt="The add-box open, searching people as you type, showing avatar results"></td>
+<td width="50%"><img src="docs/screenshots/public.png" alt="The General access control set to 'Anyone signed in' with a Viewer role"></td>
+</tr>
+<tr>
+<td align="center"><em>Search people as you type (profiles)</em></td>
+<td align="center"><em>General access for public audiences</em></td>
+</tr>
+</table>
 
 ### Attributes
 

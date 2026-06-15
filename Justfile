@@ -65,3 +65,9 @@ dev *flags:
 # (run `just frontend-dev` in another terminal first).
 dev-with-hmr *flags:
   just dev -s plugins.datasette-vite.dev_ports.datasette_acl_share {{DEV_PORT}} {{flags}}
+
+# Screenshot the share dialog in each sharing shape → docs/screenshots/*.png.
+# Drives a running `just dev` demo (start it in another terminal first).
+shots:
+  npm --prefix frontend exec -- playwright install chromium
+  node frontend/scripts/screenshots.mjs
