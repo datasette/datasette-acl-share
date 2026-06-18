@@ -73,15 +73,11 @@ roster. Mutations send the audience as `{"principal_type": "<audience>"}`.
 
 ## Dependencies
 
-`pyproject.toml` requires **`datasette-acl>=0.5a1`** (the first tagged release
-with the JSON API) and `datasette-vite`. The first-class public-audience
-principal types (and acl's `grant()` taking a `Principal` object) ship on acl's
-unreleased `general-access-principals` work; bump the floor when it's tagged.
-Until then `just dev` installs acl from the **local checkout** (`uv pip install
--e ../datasette-acl` into the venv + `uv run --no-sync`) because the demo's seed
-code builds `Principal.actor/.group/.public(...)` from acl's current API. (An
-overlay `--with-editable` doesn't work while the checkout still reports version
-0.5a1 — uv treats the locked PyPI 0.5a1 as already satisfying it.)
+`pyproject.toml` requires **`datasette-acl>=0.6a0`** and `datasette-vite`. The
+first-class public-audience principal types (and acl's `grant()` taking a
+`Principal` object) that the dialog and demo seed code depend on shipped in acl
+**0.6a0** — `just dev` installs it straight from PyPI (no more local-checkout
+overlay).
 
 ## Dev & test
 
