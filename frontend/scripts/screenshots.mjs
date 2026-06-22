@@ -41,10 +41,21 @@ const CASES = [
 // carries the [open] attribute, so scope to it (others match the class too).
 const DIALOG = "dialog.datasette-acl-share-dialog[open]";
 
+// Optional CLI filter: `node screenshots.mjs people-selected groups` regenerates
+// only the named cases, so iterating on one shot doesn't rewrite (and re-stat)
+// every PNG. No args → all cases.
+const only = new Set(process.argv.slice(2));
+const cases = only.size ? CASES.filter((c) => only.has(c.name)) : CASES;
+if (only.size && cases.length !== only.size) {
+  const known = new Set(CASES.map((c) => c.name));
+  const bad = [...only].filter((n) => !known.has(n));
+  throw new Error(`Unknown screenshot case(s): ${bad.join(", ")}`);
+}
+
 await mkdir(OUT, { recursive: true });
 const browser = await chromium.launch();
 
-for (const c of CASES) {
+for (const c of cases) {
   const ctx = await browser.newContext({ deviceScaleFactor: 2 });
   await ctx.addCookies([
     { name: "actor", value: c.actor, url: BASE },

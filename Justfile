@@ -54,6 +54,8 @@ dev-with-hmr *flags:
 
 # Screenshot the share dialog in each sharing shape → docs/screenshots/*.png.
 # Drives a running `just dev` demo (start it in another terminal first).
-shots:
+# Pass case names to regenerate only those (e.g. `just shots people-selected`)
+# so iterating on one shot doesn't rewrite/re-stat every PNG; no names → all.
+shots *names:
   npm --prefix frontend exec -- playwright install chromium
-  node frontend/scripts/screenshots.mjs
+  node frontend/scripts/screenshots.mjs {{names}}
