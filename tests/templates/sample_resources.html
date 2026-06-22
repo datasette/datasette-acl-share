@@ -141,7 +141,8 @@
       </dialog>
       <span class="acl-dot">·</span>
       <form class="inline" method="post" action="{{ urls.path('/sample-resources/delete') }}"
-            onsubmit="return confirm('Delete “{{ inst.title }}”? This removes its grants too.')">
+            data-name="{{ inst.title }}"
+            onsubmit="return confirm('Are you sure you want to delete “' + this.dataset.name + '”? This removes its grants too.')">
         <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
         <input type="hidden" name="type" value="{{ section.type }}">
         <input type="hidden" name="id" value="{{ inst.id }}">
