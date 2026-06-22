@@ -10,7 +10,7 @@ requires-python = ">=3.10"
 dependencies = [
     "datasette>=1.0a30",
     "datasette-vite>=0.0.1a4",
-    "datasette-acl>=0.6a0",
+    "datasette-acl>=0.6a1",
 ]
 
 [dependency-groups]
