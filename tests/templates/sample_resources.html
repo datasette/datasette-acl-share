@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+
+{% block title %}Sample resources — ACL gallery{% endblock %}
+
+{% block extra_head %}
+<style>
+  .acl-res {
+    border: 1px solid #d0d7de;
+    border-radius: 8px;
+    padding: 1rem 1.25rem 1.25rem;
+    margin: 1.25rem 0;
+    max-width: 52rem;
+  }
+  .acl-res__head h2 { margin: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; }
+  .acl-res__type {
+    font-family: ui-monospace, monospace;
+    font-size: 0.7em;
+    background: #eef1f4;
+    color: #444d56;
+    padding: 0.05em 0.45em;
+    border-radius: 4px;
+  }
+  .acl-res__desc { margin: 0.5rem 0 0.9rem; }
+  .acl-res h3 {
+    font-size: 0.8rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #57606a;
+    margin: 0.9rem 0 0.4rem;
+  }
+  .acl-res__note { color: #57606a; margin: 0 0 0.6rem; }
+  table.acl-res__roles { border-collapse: collapse; font-size: 0.9em; width: 100%; }
+  table.acl-res__roles th, table.acl-res__roles td {
+    text-align: left;
+    padding: 0.3em 0.7em 0.3em 0;
+    border-bottom: 1px solid #eaecef;
+    vertical-align: top;
+  }
+  table.acl-res__roles th { color: #57606a; font-weight: 600; }
+  .acl-res__manage { color: #14532d; font-weight: 600; }
+  .acl-res__sharing { font-size: 0.9em; margin: 0.7rem 0 0; }
+  .acl-res__sharing code {
+    background: #eef1f4; padding: 0.05em 0.4em; border-radius: 4px;
+  }
+
+  /* one row per instance */
+  ul.acl-res__instances { list-style: none; margin: 0.4rem 0 0; padding: 0; }
+  li.acl-res__instance {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+    padding: 0.55rem 0;
+    border-bottom: 1px solid #eaecef;
+  }
+  li.acl-res__instance:last-child { border-bottom: none; }
+  .acl-res__instance-title { font-weight: 600; }
+  .acl-res__instance-blurb { color: #57606a; font-size: 0.85em; flex: 1 1 16rem; }
+  .acl-res__role {
+    font-size: 0.72em;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+    font-weight: 700;
+    padding: 0.1em 0.5em;
+    border-radius: 999px;
+    background: #eef1f4;
+    color: #57606a;
+    white-space: nowrap;
+  }
+  .acl-res__role--manage { background: #d9f0e1; color: #14532d; }
+  .acl-res__role--none { background: #f6f8fa; color: #8a949e; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h1>Sample resources — ACL gallery</h1>
+<p>
+  One section per acl resource type, each with a deliberately different
+  permissions model, and several instances shared in different shapes — across
+  people, groups and public audiences. Each instance is tagged with
+  <strong>your</strong> highest role on it; the share trigger opens only when you
+  can manage it. Switch actors with the <strong>debug bar</strong> at the bottom
+  (start as <strong>Clark</strong> — he manages at least one of every type) and
+  watch the badges change.
+</p>
+
+{% for section in sections %}
+<section class="acl-res">
+  <div class="acl-res__head">
+    <h2>{{ section.label }} <span class="acl-res__type">{{ section.type }}</span></h2>
+  </div>
+
+  <p class="acl-res__desc">{{ section.description }}</p>
+
+  <h3>Permissions model</h3>
+  <p class="acl-res__note">{{ section.blurb }}</p>
+  <table class="acl-res__roles">
+    <thead>
+      <tr><th>Role</th><th>Can manage</th><th>What it grants</th></tr>
+    </thead>
+    <tbody>
+      {% for role in section.roles %}
+      <tr>
+        <td>{{ role.name }}</td>
+        <td>{% if role.manage %}<span class="acl-res__manage">✓ manage</span>{% else %}—{% endif %}</td>
+        <td>{{ role.description }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  <p class="acl-res__sharing">
+    Can be shared with: {{ section.sharing }}
+    <span style="color:#8a949e;">(dialog <code>features="{{ section.features or "all" }}"</code>)</span>
+  </p>
+
+  <h3>Instances</h3>
+  <ul class="acl-res__instances">
+    {% for inst in section.instances %}
+    <li class="acl-res__instance">
+      <span class="acl-res__instance-title">{{ inst.title }}</span>
+      {% if inst.role %}
+        <span class="acl-res__role{% if inst.can_manage %} acl-res__role--manage{% endif %}">{{ inst.role }}</span>
+      {% else %}
+        <span class="acl-res__role acl-res__role--none">no access</span>
+      {% endif %}
+      <span class="acl-res__instance-blurb">{{ inst.blurb }}</span>
+      <datasette-acl-share-dialog
+        resource-type="{{ section.type }}"
+        parent="{{ inst.id }}"
+        resource-label="{{ inst.title }}"
+        {% if section.features %}features="{{ section.features }}"{% endif %}
+        {% if actor_json %}actor-json='{{ actor_json|safe }}'{% endif %}
+        {% if not inst.can_manage %}disabled{% endif %}
+      ></datasette-acl-share-dialog>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endfor %}
+{% endblock %}

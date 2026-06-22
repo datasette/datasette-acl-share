@@ -48,7 +48,7 @@ dependencies = [
 ## Step 1 — Model your resource in datasette-acl
 
 The canonical worked example is
-[`tests/sample_plugins/sample_docs.py`](../tests/sample_plugins/sample_docs.py)
+[`tests/sample_plugins/sample_resources.py`](../tests/sample_plugins/sample_resources.py)
 — read it alongside this section. The four pieces:
 
 ### 1a. A `Resource` subclass
@@ -431,7 +431,7 @@ inherit Datasette's chrome — see the sample plugin + `tests/templates/`.)
 
 ## See also
 
-- [`../tests/sample_plugins/sample_docs.py`](../tests/sample_plugins/sample_docs.py) — the worked reference implementation.
+- [`../tests/sample_plugins/sample_resources.py`](../tests/sample_plugins/sample_resources.py) — the worked reference implementation.
 - [`../CLAUDE.md`](../CLAUDE.md) — component contract + repo internals.
 - [`viewer-roster.md`](./viewer-roster.md) — the manager-only read limitation and the plan to lift it.
 - [`../../datasette-acl/docs/json-api.md`](../../datasette-acl/docs/json-api.md) — the underlying acl JSON API.

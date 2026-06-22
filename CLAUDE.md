@@ -31,8 +31,9 @@ frontend/src/lib/                 pure helpers: api.ts (typed fetch client), typ
                                   grants.ts, pills.ts, people.ts, groups.ts, avatar.ts
                                   (+ matching *.test.ts; vitest node + browser suites)
 tests/test_share.py               Python tests (asset helper + capability probe)
-tests/sample_plugins/sample_docs.py   throwaway demo plugin (NOT packaged; --plugins-dir)
-tests/templates/                  demo page templates (--template-dir; extend base.html)
+tests/sample_plugins/sample_resources.py   throwaway demo plugin (NOT packaged; --plugins-dir)
+tests/sample_plugins/sample_resource_specs/   one module per resource type (pure-data SPECs)
+tests/templates/                  demo page template (--template-dir; extends base.html)
 docs/integration-guide.md         how host plugins embed the dialog (source-controlled)
 ```
 
@@ -84,7 +85,7 @@ overlay).
 ```sh
 just frontend-install          # one-time npm install
 just frontend                  # production build → static/gen + manifest.json
-just dev                       # datasette + sample-docs demo at :5171
+just dev                       # datasette + sample-resources demo at :5171
 just frontend-dev              # (terminal 1) vite HMR dev server on $DEV_PORT
 just dev-with-hmr              # (terminal 2) datasette pointed at the dev server
 
@@ -97,32 +98,43 @@ uv run pytest                     # python
 env and to datasette-vite's `dev_ports` setting. Built assets are gitignored.
 
 There is no configured Python type-checker; the IDE's `ty` may flag the demo
-plugin (e.g. `str | list[str]` from `DOCUMENTS` dicts, unused hook params,
-unresolved `datasette_debug_gotham`) — these are runtime-correct noise, not gates.
+plugin (e.g. spec-dict value types, unused hook params, unresolved
+`datasette_debug_gotham`) — these are runtime-correct noise, not gates.
 
-## The sample-docs demo (`just dev`)
+## The sample-resources demo (`just dev`)
 
-A dev-only plugin that gives the dialog a real resource:
-- Registers acl resource type `sample-doc` (parent-only; `parent` = doc id) with
-  Viewer/Editor/Manager roles via `register_actions` + `datasette_acl_roles`.
-- Seeds 8 documents owned by gotham characters; each owner gets a Manager grant,
-  plus some docs carry preseeded `shares` so the dialog opens onto a realistic
-  roster (seeded lazily on first request via `_ensure_seed_grants`). A `shares`
-  entry is `{role + one of actor|group}`; group names resolve to ids (newsroom
-  dynamic-groups). The seeded access shapes:
-  - 1–3 owner-only (clark / bruce / selina)
-  - 4 daily-planet group (Editor) · 5 gotham-gazette group (Viewer)
-  - 6 crossover — both newsrooms (DP Editor + GG Viewer)
-  - 7 named people only — clark + lois (Lois individually, *not* her newsroom)
-  - 8 public — `authenticated` Viewer (any logged-in actor, not anon)
-  Owners are spread across the cast (clark & lois own two each; bruce, selina,
-  alfred, jimmy one each) — not everything is clark's.
-- `/sample-docs` (index) and `/sample-docs/<id>` (one doc, embeds the dialog).
-  **Both gate on the `sample-doc-view` acl action** via `datasette.allowed`, so
-  viewing reflects sharing: the index lists only docs you can view — each tagged
-  with *your* highest role on it (Owner / Manager / Editor / Viewer, via
-  `highest_role_for_actor` → acl's `role_for_actions`) — and a doc page 403s
-  without a grant. The share trigger is `disabled` unless you own the doc.
+One dev-only plugin (`sample_resources.py`) serving a single
+`/sample-resources` page — a gallery whose point is to show, side by side, lots
+of different "documents" with different sharing, so switching actors visibly
+recolours the whole page. It registers **four** acl resource types whose role
+registries deliberately span the spectrum, and seeds a few instances of each:
+- `playlist` — standard Viewer/Editor/Manager via acl's `standard_roles()`.
+- `project` — hand-rolled roles, manage role named **Maintainer** (no
+  "Manager"/"Owner"): proves the dialog keys off the `manage` flag, not the name.
+- `paste` — the simple shape: **Viewer + Owner** only, plus a public audience.
+- `channel` — the maximal one: five tiers with **two** manage-capable roles
+  (Moderator + Owner), exercising last-manager counting and a deep dropdown.
+
+Each type's specs live in the **`sample_resource_specs/`** package — one
+pure-data module per type exporting a `SPEC` dict (type, label, features,
+actions, roles, and `instances`). Add a resource type by dropping a module there
+and appending it to `RESOURCE_SPECS`; `sample_resources.py` does all the
+plumbing (builds a parent-only `Resource` subclass per spec via
+`register_actions` + `datasette_acl_roles`, seeds grants lazily via
+`_ensure_seed_grants`). A spec's `instances` entry is `{id, title, blurb,
+grants}`; each grant is `{role + one of actor|group|public}` (group names
+resolve to newsroom dynamic-group ids; `public` is an audience name).
+
+Instances are seeded across the whole gotham cast in varied shapes (group
+grants, cross-newsroom, named-people-only, public audiences) with managers
+spread around — **Clark manages at least one of every type**, but bruce/lois/
+jimmy/alfred each manage some too, and a few instances are deliberately
+**single-manager** (e.g. project *Whistleblower*, channel *#announcements*) to
+exercise the orphan guard. On the page each instance is tagged with **your**
+highest role (or "no access", via `_highest_role_for_actor` → acl's
+`role_for_actions`), and its share trigger is `disabled` unless you can manage
+it (acl's read endpoint is manager-only). There's no per-instance subpage and no
+view-gating — everything renders, the badges just change per actor.
 
 Switch actors with the **debug bar** (gotham, via datasette-debug-bar) — it sets
 the `actor` cookie. user-profiles (seeded by gotham) gives names/avatars/search;
@@ -138,9 +150,11 @@ grantable — no manual roster. (`member_count` in the groups endpoint fills in
 lazily as acl resolves each actor.) To add a new newsroom group: add another
 `dynamic-groups.<name>.newsroom <name>` flag — no plugin change needed.
 
-Demo flow: log in as Clark → open doc 1 → share Viewer with Lois → switch to
-Lois → doc 1 now appears on her index and opens. Or share Viewer with the
-**daily-planet** group → every Daily Planet actor (lois, jimmy) inherits it.
+Demo flow: log in as Clark → on the `playlist` *Summer Road-Trip Mix* open the
+dialog → share Viewer with Lois → switch to Lois → that instance now shows her a
+Viewer badge. Or share with the **daily-planet** group → every Daily Planet
+actor (lois, jimmy) inherits it. Try a single-manager instance (project
+*Whistleblower*) to see the orphan guard block removing the last Maintainer.
 
 ## Current state / what's done
 
@@ -148,9 +162,10 @@ Lois → doc 1 now appears on her index and opens. Or share Viewer with the
 - Component is a modal-with-trigger (was inline), with `open`/`trigger-label`/
   `disabled`. Lazy load on open.
 - Agent picker feature **removed** (see below).
-- Sample-docs demo with real acl gating end-to-end: 8 docs across preseeded
-  sharing shapes, gotham newsrooms wired as acl dynamic groups, and an index
-  that shows each actor's role.
+- Sample-resources demo: one `/sample-resources` page over four acl resource
+  types with deliberately varied role registries, each seeded with several
+  instances across preseeded sharing shapes, gotham newsrooms wired as acl
+  dynamic groups, and a per-instance badge of each actor's role.
 - Plugin-author integration guide at `docs/integration-guide.md`.
 - Aligned to acl's first-class public-audience model (`everyone` /
   `authenticated` / `anonymous`; wildcard ids retired): mutations send the

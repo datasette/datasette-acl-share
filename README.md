@@ -39,11 +39,19 @@ as tags, no add-box, no remove buttons.
 <table>
 <tr>
 <td width="50%"><img src="docs/screenshots/people-search.png" alt="The add-box open, searching people as you type, showing avatar results"></td>
-<td width="50%"><img src="docs/screenshots/public.png" alt="The General access control set to 'Anyone signed in' with a Viewer role"></td>
+<td width="50%"><img src="docs/screenshots/people-selected.png" alt="A searched person staged as a removable pill with a role dropdown and Share button, before sharing"></td>
 </tr>
 <tr>
 <td align="center"><em>Search people as you type (profiles)</em></td>
+<td align="center"><em>Picked person staged with a role, before hitting Share</em></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/public.png" alt="The General access control set to 'Anyone signed in' with a Viewer role"></td>
+<td width="50%"></td>
+</tr>
+<tr>
 <td align="center"><em>General access for public audiences</em></td>
+<td align="center"></td>
 </tr>
 </table>
 
@@ -150,7 +158,7 @@ unchanged, wiring events with `addEventListener`.
 ```sh
 just frontend-install   # one-time npm install
 just frontend           # production build (writes static/gen + manifest.json)
-just dev                # datasette + the sample-docs demo at :5171
+just dev                # datasette + the sample-resources demo at :5171
 
 # Or with Vite HMR:
 just frontend-dev       # terminal 1: vite dev server (port 5180)
@@ -159,9 +167,9 @@ just dev-with-hmr       # terminal 2: datasette pointed at the dev server
 
 `just dev` loads a throwaway demo plugin (`tests/sample_plugins`, with templates
 in `tests/templates`) plus datasette-debug-gotham / datasette-user-profiles /
-datasette-debug-bar. Visit <http://localhost:5171/sample-docs>, switch
-characters with the debug bar (Clark owns doc 1), and exercise the dialog — see
-`CLAUDE.md` for the full demo walkthrough.
+datasette-debug-bar. Visit <http://localhost:5171/sample-resources>, switch
+characters with the debug bar (start as Clark — he manages one of every type),
+and exercise the dialog — see `CLAUDE.md` for the full demo walkthrough.
 
 Built assets (`datasette_acl_share/static/`, `manifest.json`) are gitignored and
 produced by the build.

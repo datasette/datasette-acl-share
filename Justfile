@@ -11,8 +11,9 @@
 #   Terminal 2:  just dev-with-hmr    # datasette pointed at the vite dev server
 #
 # `just dev` loads a sample plugin (tests/sample_plugins) + datasette-debug-gotham
-# + datasette-user-profiles. Visit http://localhost:5171/sample-docs, "log in" as
-# a character (Clark owns doc 1), open a doc, and exercise the share dialog.
+# + datasette-user-profiles. Visit http://localhost:5171/sample-resources, "log in"
+# as a character (start as Clark — he manages one of every type), and exercise the
+# share dialog against each instance.
 
 # Single source of truth for the vite dev-server port. Consumed by both the
 # vite config (via the DEV_PORT env var) and datasette-vite's dev_ports setting.
@@ -44,9 +45,6 @@ dev *flags:
     -s permissions.profile_access.id '*' \
     -s plugins.datasette-acl.dynamic-groups.daily-planet.newsroom daily-planet \
     -s plugins.datasette-acl.dynamic-groups.gotham-gazette.newsroom gotham-gazette \
-    tmp.db --create \
-    -p 5171 \
-    --internal internal.db \
     {{flags}}
 
 # Same as `dev`, but points datasette-vite at the running vite dev server

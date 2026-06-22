@@ -5,9 +5,10 @@
 // `just shots` in another. Output → docs/screenshots/*.png (committed; the
 // README embeds them, so re-run + commit when the dialog's look changes).
 //
-// Each case is (doc id + its owner): the demo seeds a different sharing shape
-// per doc and only the owner can open the dialog. debug-gotham authenticates
-// off a plain `actor` cookie, so "log in as X" is just a cookie.
+// Each case targets one instance on the single /sample-resources page, picked
+// for the sharing shape it shows. Only an actor who can manage an instance can
+// open its dialog, so each case names the right actor. debug-gotham
+// authenticates off a plain `actor` cookie, so "log in as X" is just a cookie.
 import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 import { dirname, resolve } from "node:path";
@@ -16,18 +17,29 @@ import { mkdir } from "node:fs/promises";
 const BASE = process.env.SHOTS_BASE || "http://localhost:5171";
 const OUT = resolve(dirname(fileURLToPath(import.meta.url)), "../../docs/screenshots");
 
+// Each case picks an instance by (resource-type, parent) — the attributes on its
+// <datasette-acl-share-dialog> element — plus the actor who can manage it.
 const CASES = [
-  { name: "empty", doc: "1", actor: "clark" }, // owner-only roster
-  { name: "people", doc: "7", actor: "clark" }, // named-person roster (clark + lois)
-  { name: "groups", doc: "6", actor: "lois" }, // both newsroom group grants
-  { name: "public", doc: "8", actor: "jimmy" }, // general access: authenticated Viewer
-  // interactive sub-states (doc 1 = only Clark on the roster, so search has
-  // people to surface — anyone already shared is filtered out of results):
-  { name: "people-search", doc: "1", actor: "clark", search: "l" }, // people dropdown open
-  { name: "groups-tab", doc: "1", actor: "clark", tab: "Groups" }, // groups picker tab
+  // sparse roster (one owner + one public audience)
+  { name: "empty", type: "channel", parent: "announcements", actor: "clark" },
+  // named-people roster (project is people-only: Maintainer + Contributor + Reader)
+  { name: "people", type: "project", parent: "apollo", actor: "clark" },
+  // a group grant on the roster (daily-planet Editor)
+  { name: "groups", type: "playlist", parent: "summer-mix", actor: "clark" },
+  // general access: a public audience (everyone) Viewer
+  { name: "public", type: "paste", parent: "kryptonite-notes", actor: "clark" },
+  // interactive sub-states, driven against a people-only instance so search has
+  // people to surface (anyone already shared is filtered out of results):
+  { name: "people-search", type: "project", parent: "apollo", actor: "clark", search: "j" },
+  // a person picked → staged as a pill with role + Share button, BEFORE sharing
+  { name: "people-selected", type: "project", parent: "apollo", actor: "clark", search: "j", pick: true },
+  // groups picker tab — needs an instance whose features include groups
+  { name: "groups-tab", type: "channel", parent: "newsroom-chat", actor: "clark", tab: "Groups" },
 ];
 
-const DIALOG = "dialog.datasette-acl-share-dialog";
+// Every instance on the page renders its own <dialog>; only the one we opened
+// carries the [open] attribute, so scope to it (others match the class too).
+const DIALOG = "dialog.datasette-acl-share-dialog[open]";
 
 await mkdir(OUT, { recursive: true });
 const browser = await chromium.launch();
@@ -38,8 +50,9 @@ for (const c of CASES) {
     { name: "actor", value: c.actor, url: BASE },
   ]);
   const page = await ctx.newPage();
-  await page.goto(`${BASE}/sample-docs/${c.doc}`);
-  await page.click(".datasette-acl-share__trigger");
+  await page.goto(`${BASE}/sample-resources`);
+  const el = `datasette-acl-share-dialog[resource-type="${c.type}"][parent="${c.parent}"]`;
+  await page.click(`${el} .datasette-acl-share__trigger`);
   await page.waitForSelector(`${DIALOG} .datasette-acl-share-dialog__list`);
 
   if (c.tab) {
@@ -50,6 +63,12 @@ for (const c of CASES) {
     // Wait for a real result row, not the (immediate) empty-state container —
     // the search is debounced + async.
     await page.waitForSelector(".datasette-acl-share-dialog__result");
+  }
+  if (c.pick) {
+    // Click the first result to stage that person as a removable pill, then
+    // wait for the pill (with its role <select> + Share button) to render.
+    await page.click(".datasette-acl-share-dialog__result");
+    await page.waitForSelector(".datasette-acl-share-dialog__pill");
   }
 
   const file = resolve(OUT, `${c.name}.png`);
