@@ -24,6 +24,7 @@
     border-radius: 4px;
   }
   .acl-desc { margin: 0 0 0.6rem; color: #57606a; }
+  hr.acl-sep { border: none; border-top: 1px solid #e1e4e8; margin: 2.25rem 0 0; }
 
   ul.acl-instances { list-style: none; margin: 0; padding: 0; }
   li.acl-inst { padding: 0.6rem 0; border-bottom: 1px solid #eaecef; }
@@ -93,6 +94,7 @@
 </p>
 
 {% for section in sections %}
+{% if not loop.first %}<hr class="acl-sep">{% endif %}
 <h2>{{ section.label }} <code>{{ section.type }}</code></h2>
 <p class="acl-desc">{{ section.description }}</p>
 
