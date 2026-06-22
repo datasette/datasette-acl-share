@@ -4,6 +4,8 @@ import {
   defaultPickerRole,
   GENERAL_ACCESS_PRINCIPALS,
   generalAccessRoles,
+  isLastManageGrant,
+  isManageGrant,
   isOwnerGrant,
   isWildcardGrant,
   orderGrants,
@@ -39,6 +41,64 @@ describe("isOwnerGrant", () => {
   it("is false for other roles / null", () => {
     expect(isOwnerGrant(grant({ id: "a", role: "Editor" }))).toBe(false);
     expect(isOwnerGrant(grant({ id: "a", role: null }))).toBe(false);
+  });
+});
+
+describe("isManageGrant", () => {
+  it("is true for the Owner row and any manage-capable role", () => {
+    expect(isManageGrant(grant({ id: "a", role: "Owner" }), ROLES)).toBe(true);
+    expect(isManageGrant(grant({ id: "a", role: "Manager" }), ROLES)).toBe(true);
+    expect(isManageGrant(grant({ id: "a", is_owner: true, role: "Editor" }), ROLES)).toBe(true);
+  });
+  it("is false for non-manage roles and unknown/null roles", () => {
+    expect(isManageGrant(grant({ id: "a", role: "Editor" }), ROLES)).toBe(false);
+    expect(isManageGrant(grant({ id: "a", role: "Viewer" }), ROLES)).toBe(false);
+    expect(isManageGrant(grant({ id: "a", role: null }), ROLES)).toBe(false);
+    expect(isManageGrant(grant({ id: "a", role: "Nope" }), ROLES)).toBe(false);
+  });
+});
+
+describe("isLastManageGrant", () => {
+  it("flags the sole manager (orphan guard) — across actors, groups and owner", () => {
+    const grants: Grant[] = [
+      grant({ id: "me", role: "Manager" }),
+      grant({ id: "v", role: "Viewer" }),
+      grant({ id: "e", role: "Editor" }),
+    ];
+    expect(isLastManageGrant(grants[0]!, grants, ROLES)).toBe(true);
+  });
+
+  it("is false when another manage-capable grant exists", () => {
+    const grants: Grant[] = [
+      grant({ id: "me", role: "Manager" }),
+      grant({ id: "owner", role: "Owner" }),
+    ];
+    expect(isLastManageGrant(grants[0]!, grants, ROLES)).toBe(false);
+  });
+
+  it("counts a managing group as another manager", () => {
+    const grants: Grant[] = [
+      grant({ id: "me", role: "Manager" }),
+      grant({ id: "5", principal: "group", kind: "group", role: "Manager" }),
+    ];
+    expect(isLastManageGrant(grants[0]!, grants, ROLES)).toBe(false);
+  });
+
+  it("is false for a non-manage grant (always safe to remove)", () => {
+    const grants: Grant[] = [
+      grant({ id: "me", role: "Manager" }),
+      grant({ id: "v", role: "Viewer" }),
+    ];
+    expect(isLastManageGrant(grants[1]!, grants, ROLES)).toBe(false);
+  });
+
+  it("does not confuse a like-named actor/group as the same principal", () => {
+    // Same id, different principal — both manage; removing one leaves the other.
+    const grants: Grant[] = [
+      grant({ id: "1", principal: "actor", role: "Manager" }),
+      grant({ id: "1", principal: "group", kind: "group", role: "Manager" }),
+    ];
+    expect(isLastManageGrant(grants[0]!, grants, ROLES)).toBe(false);
   });
 });
 

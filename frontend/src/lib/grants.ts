@@ -65,6 +65,38 @@ export function isOwnerGrant(grant: Grant): boolean {
 }
 
 /**
+ * True when a grant confers management of the resource — an Owner, or any grant
+ * whose resolved role is manage-capable (`role.manage === true`). Used to keep
+ * the resource from being orphaned (see {@link isLastManageGrant}).
+ */
+export function isManageGrant(grant: Grant, roles: Role[]): boolean {
+  if (isOwnerGrant(grant)) return true;
+  const role = roles.find((r) => r.name === grant.role);
+  return role?.manage === true;
+}
+
+/**
+ * True when `grant` is the ONLY manage-capable grant on the resource, so
+ * revoking it (or downgrading it to a non-manage role) would orphan the
+ * resource — leaving nobody able to manage sharing. Because acl's read endpoint
+ * is manager-only, an orphaned resource can't even re-open this dialog, so the
+ * UI blocks the action. Returns false for non-manage grants (they're always
+ * safe to remove).
+ */
+export function isLastManageGrant(
+  grant: Grant,
+  grants: Grant[],
+  roles: Role[],
+): boolean {
+  if (!isManageGrant(grant, roles)) return false;
+  return !grants.some(
+    (g) =>
+      !(g.principal === grant.principal && g.id === grant.id) &&
+      isManageGrant(g, roles),
+  );
+}
+
+/**
  * Roles offered in a per-grant dropdown, ordered by ascending rank. The
  * "Owner" role is excluded — ownership transfer is out of scope for the
  * per-grant control.
