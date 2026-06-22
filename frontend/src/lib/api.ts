@@ -265,6 +265,21 @@ export class ShareApi {
     return res.results ?? [];
   }
 
+  /** GET /-/profiles/api/resolve?ids= → batch-resolve known actor ids to
+   * profile records (display name / email / avatar), keyed by id. Used to
+   * enrich the roster, whose grants arrive from acl as bare ids — acl's read
+   * endpoint enriches via the firstresult `actors_from_ids` hook, which
+   * profiles deliberately doesn't implement, so we resolve over HTTP instead.
+   * Unknown ids are omitted from the result map. */
+  async resolveActors(ids: string[]): Promise<Record<string, Actor>> {
+    if (ids.length === 0) return {};
+    const url = withQuery(joinPath(this.profilesBase, "resolve"), {
+      ids: ids.join(","),
+    });
+    const res = await this.getJson<{ results: Record<string, Actor> }>(url);
+    return res.results ?? {};
+  }
+
   /** GET /-/acl/api/groups → the group picker. Carries the dialog's resource
    * so per-resource Managers (no global admin) are authorized. */
   async listGroups(): Promise<Group[]> {

@@ -33,11 +33,6 @@ check-frontend:
 
 dev *flags:
   DATASETTE_SECRET=abc123 uv run \
-    --prerelease=allow \
-    --with-editable ../datasette-debug-gotham \
-    --with-editable ../datasette-user-profiles \
-    --with-editable ../datasette-debug-bar \
-    --with 'datasette>=1a' \
     datasette \
     --root \
     --plugins-dir tests/sample_plugins \

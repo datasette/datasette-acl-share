@@ -179,12 +179,43 @@
     loadError = null;
     try {
       share = await api.getResource(rt, p, c);
+      await enrichRoster();
     } catch (err) {
       loadError = errorMessage(err, "Failed to load sharing");
       share = null;
     } finally {
       loading = false;
     }
+  }
+
+  /** acl's read endpoint returns actor grants as bare ids (it enriches via the
+   * firstresult `actors_from_ids` hook, which user-profiles doesn't implement).
+   * When People search is available, batch-resolve those ids against profiles'
+   * resolve endpoint and merge display name / email onto each grant so the
+   * roster shows "Clark Kent" rather than "clark". Best-effort: any failure
+   * leaves the bare-id fallback in place. */
+  async function enrichRoster() {
+    if (!share || !caps.people) return;
+    const ids = share.grants
+      .filter((g) => g.kind === "user" && !g.display_name)
+      .map((g) => g.id);
+    if (ids.length === 0) return;
+    let resolved: Record<string, Actor>;
+    try {
+      resolved = await api.resolveActors([...new Set(ids)]);
+    } catch {
+      return; // profiles absent or restricted — keep the id/email fallback
+    }
+    share.grants = share.grants.map((g) => {
+      const hit = g.kind === "user" ? resolved[g.id] : undefined;
+      return hit
+        ? {
+            ...g,
+            display_name: hit.display_name ?? g.display_name,
+            email: hit.email ?? g.email,
+          }
+        : g;
+    });
   }
 
   function errorMessage(err: unknown, fallback: string): string {
@@ -223,7 +254,9 @@
     if (grant.kind === "public") {
       return grant.display_name?.trim() || audienceLabel(grant.id);
     }
-    return grant.display_name?.trim() || grant.id;
+    // For actors with no profile name, fall back to email before the raw id so
+    // we never surface a bare numeric actor id as someone's name.
+    return grant.display_name?.trim() || grant.email?.trim() || grant.id;
   }
 
   function rowSubLabel(grant: Grant): string | null {
@@ -231,7 +264,11 @@
       const n = grant.member_count ?? 0;
       return `${n} member${n === 1 ? "" : "s"}`;
     }
-    if (grant.kind === "user" && grant.email) return grant.email;
+    // Show the email under the name only when the name isn't already the email
+    // (i.e. when a display name was present); otherwise it would just repeat.
+    if (grant.kind === "user" && grant.email && grant.display_name?.trim()) {
+      return grant.email;
+    }
     return null;
   }
 
@@ -930,7 +967,7 @@
                 style:background-color={avatarColor(grant.id)}
                 aria-hidden="true"
               >
-                {initials(grant.display_name || grant.id)}
+                {initials(rowLabel(grant))}
               </span>
               {#if badge(grant.kind)}
                 <span

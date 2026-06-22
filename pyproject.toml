@@ -14,7 +14,20 @@ dependencies = [
 ]
 
 [dependency-groups]
-dev = ["pytest", "pytest-asyncio"]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    # The `just dev` demo stack, from PyPI (no local-checkout overlay):
+    # user-profiles (people search + the /-/profiles/api/resolve roster
+    # enrichment endpoint), gotham (demo actors + newsrooms), debug-bar (actor
+    # switcher).
+    "datasette-user-profiles>=0.1.0a9",
+    "datasette-debug-gotham>=0.1.0a3",
+    "datasette-debug-bar>=0.0.1a1",
+]
+
+[tool.uv]
+prerelease = "allow"
 
 [build-system]
 requires = ["setuptools"]

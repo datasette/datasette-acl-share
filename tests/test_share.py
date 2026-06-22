@@ -2,10 +2,10 @@
 
 Run: ``uv run pytest`` (or ``uv run --with pytest pytest``).
 
-Note on the capability probe: in this venv datasette-user-profiles is NOT
-installed, so the probe must degrade gracefully and report ``people: false``
-while still reporting the intrinsic acl features (``groups`` / ``public``) true.
-That graceful path is exercised below (``test_capabilities_*``).
+Note on the capability probe: datasette-user-profiles IS installed in the dev
+env (it backs the `just dev` demo), so the probe reports ``people: true`` here.
+The absent-profiles degrade path (``people: false``, acl intrinsics still true)
+is exercised by monkeypatching the plugin list (``test_capabilities_*``).
 """
 
 import json
@@ -133,9 +133,16 @@ def test_assets_dev_mode():
 # --- capability probe ----------------------------------------------------
 
 
-def test_capabilities_degrade_gracefully():
-    """profiles is NOT installed in this venv → people false, groups/public
-    (intrinsic to acl) true. Probe must not raise."""
+def test_capabilities_degrade_gracefully(monkeypatch):
+    """profiles absent → people false, groups/public (intrinsic to acl) true.
+    Profiles is a dev dep here, so simulate its absence via the plugin list."""
+    import datasette.plugins
+
+    monkeypatch.setattr(
+        datasette.plugins,
+        "get_plugins",
+        lambda: [{"name": "datasette-acl-share"}],
+    )
     caps = share_capabilities()
     assert caps == {
         "people": False,
@@ -172,7 +179,13 @@ async def test_capabilities_endpoint():
     assert response.status_code == 200
     data = response.json()
     assert set(data) == {"people", "groups", "public"}
-    # profiles absent here → graceful false; acl intrinsics true.
-    assert data["people"] is False
+    # people reflects whether profiles is actually installed (it is, as a dev
+    # dep); acl intrinsics are always true.
+    from datasette.plugins import get_plugins
+
+    profiles_installed = any(
+        p.get("name") == "datasette-user-profiles" for p in get_plugins()
+    )
+    assert data["people"] is profiles_installed
     assert data["groups"] is True
     assert data["public"] is True
