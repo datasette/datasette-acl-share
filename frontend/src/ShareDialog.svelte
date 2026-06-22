@@ -16,6 +16,7 @@
     currentWildcardGrant,
     defaultPickerRole,
     generalAccessRoles,
+    isLastManageGrant,
     isOwnerGrant,
     orderGrants,
     selectableRoles,
@@ -240,12 +241,36 @@
 
   // --- mutations -----------------------------------------------------------
 
+  /** Shown when the user tries to strand the resource by removing/downgrading
+   * its only manager. */
+  const ORPHAN_REMOVE_MESSAGE =
+    "Can't remove the only manager — the resource would be left with nobody " +
+    "able to manage sharing. Grant another person or group a managing role first.";
+  const ORPHAN_DOWNGRADE_MESSAGE =
+    "Can't change the only manager's role — the resource would be left with " +
+    "nobody able to manage sharing. Grant another person or group a managing " +
+    "role first.";
+
   async function onRoleChange(grant: Grant, event: Event) {
     if (!share || !resourceType || !parent) return;
     const select = event.currentTarget as HTMLSelectElement;
     const newRole = select.value;
     const prevRole = grant.role;
     if (newRole === prevRole) return;
+
+    // Same orphan guard as removal: downgrading the last manager to a
+    // non-manage role would leave nobody able to manage. Revert the <select>
+    // and surface the reason rather than stranding the resource.
+    const newRoleManages =
+      share.roles.find((r) => r.name === newRole)?.manage === true;
+    if (
+      !newRoleManages &&
+      isLastManageGrant(grant, share.grants, share.roles)
+    ) {
+      select.value = prevRole ?? "";
+      actionError = ORPHAN_DOWNGRADE_MESSAGE;
+      return;
+    }
 
     const key = principalKey(grant);
     actionError = null;
@@ -277,6 +302,13 @@
 
   async function onRemove(grant: Grant) {
     if (!share || !resourceType || !parent) return;
+    // Guard against orphaning: refuse to revoke the resource's last
+    // manage-capable grant. Without a manager nobody can re-open this dialog
+    // (acl's read endpoint is manager-only), so the resource would be stranded.
+    if (isLastManageGrant(grant, share.grants, share.roles)) {
+      actionError = ORPHAN_REMOVE_MESSAGE;
+      return;
+    }
     const key = principalKey(grant);
     const removed = grant;
     actionError = null;
@@ -1019,6 +1051,9 @@
           {@const owner = isOwnerGrant(grant)}
           {@const you = isYou(grant)}
           {@const rowBusy = busy[principalKey(grant)] === true}
+          {@const lastManager =
+            share != null &&
+            isLastManageGrant(grant, share.grants, share.roles)}
           <li
             class="datasette-acl-share-dialog__row"
             class:is-owner={owner}
@@ -1089,7 +1124,10 @@
                   type="button"
                   class="datasette-acl-share-dialog__remove"
                   aria-label={`Remove ${rowLabel(grant)}`}
-                  disabled={rowBusy}
+                  disabled={rowBusy || lastManager}
+                  title={lastManager
+                    ? "Can't remove the only manager — the resource would be orphaned"
+                    : undefined}
                   onclick={() => onRemove(grant)}
                 >
                   ×
