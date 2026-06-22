@@ -4,60 +4,36 @@
 
 {% block extra_head %}
 <style>
-  .acl-res {
-    border: 1px solid #d0d7de;
-    border-radius: 8px;
-    padding: 1rem 1.25rem 1.25rem;
-    margin: 1.25rem 0;
-    max-width: 52rem;
+  .acl-wrap { max-width: 620px; margin: 0 auto; padding: 0 1rem 3rem; }
+  .acl-wrap h1 { margin-bottom: 0.3rem; }
+  .acl-wrap > p.acl-lede { color: #57606a; margin-top: 0; }
+
+  .acl-wrap h2 {
+    margin: 2rem 0 0.2rem;
+    font-size: 1.25rem;
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
   }
-  .acl-res__head h2 { margin: 0; font-size: 1.2rem; display: flex; align-items: center; gap: 0.5rem; }
-  .acl-res__type {
-    font-family: ui-monospace, monospace;
-    font-size: 0.7em;
+  .acl-wrap h2 code {
+    font-size: 0.62em;
+    font-weight: 600;
     background: #eef1f4;
     color: #444d56;
-    padding: 0.05em 0.45em;
+    padding: 0.1em 0.45em;
     border-radius: 4px;
   }
-  .acl-res__desc { margin: 0.5rem 0 0.9rem; }
-  .acl-res h3 {
-    font-size: 0.8rem;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: #57606a;
-    margin: 0.9rem 0 0.4rem;
-  }
-  .acl-res__note { color: #57606a; margin: 0 0 0.6rem; }
-  table.acl-res__roles { border-collapse: collapse; font-size: 0.9em; width: 100%; }
-  table.acl-res__roles th, table.acl-res__roles td {
-    text-align: left;
-    padding: 0.3em 0.7em 0.3em 0;
-    border-bottom: 1px solid #eaecef;
-    vertical-align: top;
-  }
-  table.acl-res__roles th { color: #57606a; font-weight: 600; }
-  .acl-res__manage { color: #14532d; font-weight: 600; }
-  .acl-res__sharing { font-size: 0.9em; margin: 0.7rem 0 0; }
-  .acl-res__sharing code {
-    background: #eef1f4; padding: 0.05em 0.4em; border-radius: 4px;
-  }
+  .acl-desc { margin: 0 0 0.6rem; color: #57606a; }
 
-  /* one row per instance */
-  ul.acl-res__instances { list-style: none; margin: 0.4rem 0 0; padding: 0; }
-  li.acl-res__instance {
-    display: flex;
-    align-items: center;
-    gap: 0.6rem;
-    flex-wrap: wrap;
-    padding: 0.55rem 0;
-    border-bottom: 1px solid #eaecef;
-  }
-  li.acl-res__instance:last-child { border-bottom: none; }
-  .acl-res__instance-title { font-weight: 600; }
-  .acl-res__instance-blurb { color: #57606a; font-size: 0.85em; flex: 1 1 16rem; }
-  .acl-res__role {
-    font-size: 0.72em;
+  ul.acl-instances { list-style: none; margin: 0; padding: 0; }
+  li.acl-inst { padding: 0.6rem 0; border-bottom: 1px solid #eaecef; }
+  li.acl-inst:last-child { border-bottom: none; }
+  .acl-inst__main { display: flex; align-items: center; gap: 0.55rem; flex-wrap: wrap; }
+  .acl-inst__title { font-weight: 600; }
+  .acl-inst__blurb { color: #8a949e; font-size: 0.85em; margin: 0.15rem 0 0; }
+
+  .acl-role {
+    font-size: 0.7em;
     text-transform: uppercase;
     letter-spacing: 0.03em;
     font-weight: 700;
@@ -67,63 +43,59 @@
     color: #57606a;
     white-space: nowrap;
   }
-  .acl-res__role--manage { background: #d9f0e1; color: #14532d; }
-  .acl-res__role--none { background: #f6f8fa; color: #8a949e; font-weight: 600; }
+  .acl-role--manage { background: #d9f0e1; color: #14532d; }
+  .acl-role--none { background: #f6f8fa; color: #8a949e; }
+
+  .acl-inst__admin { margin-top: 0.35rem; font-size: 0.85em; }
+  .acl-inst__admin summary { color: #57606a; cursor: pointer; display: inline; }
+  .acl-inst__admin form.inline { display: inline; }
+  .acl-edit form { margin: 0.4rem 0 0.2rem; display: grid; gap: 0.35rem; max-width: 28rem; }
+  .acl-edit input[type=text] { padding: 0.3em 0.5em; width: 100%; box-sizing: border-box; }
+  .acl-linkbtn {
+    background: none; border: none; padding: 0; color: #b42318;
+    cursor: pointer; font: inherit; text-decoration: underline;
+  }
+  .acl-dot { color: #d0d7de; margin: 0 0.15rem; }
+
+  .acl-create {
+    margin-top: 2.5rem; padding-top: 1.25rem; border-top: 2px solid #eaecef;
+  }
+  .acl-create form { display: grid; gap: 0.5rem; max-width: 28rem; }
+  .acl-create label { font-size: 0.85em; color: #57606a; display: grid; gap: 0.2rem; }
+  .acl-create input[type=text], .acl-create select { padding: 0.35em 0.5em; }
+  .acl-btn {
+    justify-self: start; padding: 0.4em 0.9em; border: 1px solid #d0d7de;
+    border-radius: 6px; background: #f6f8fa; cursor: pointer; font: inherit;
+  }
 </style>
 {% endblock %}
 
 {% block content %}
-<h1>Sample resources — ACL gallery</h1>
-<p>
-  One section per acl resource type, each with a deliberately different
-  permissions model, and several instances shared in different shapes — across
-  people, groups and public audiences. Each instance is tagged with
-  <strong>your</strong> highest role on it; the share trigger opens only when you
-  can manage it. Switch actors with the <strong>debug bar</strong> at the bottom
-  (start as <strong>Clark</strong> — he manages at least one of every type) and
-  watch the badges change.
+<div class="acl-wrap">
+<h1>Sample resources</h1>
+<p class="acl-lede">
+  A few resource types with deliberately different permission models, each with
+  some instances shared across people, groups and public audiences. Every
+  instance is tagged with <strong>your</strong> highest role; the share trigger
+  opens only when you can manage it. Switch actors with the <strong>debug
+  bar</strong> (start as <strong>Clark</strong>) and watch the badges change.
+  Instances are real, editable rows — create, rename and delete them below.
 </p>
 
 {% for section in sections %}
-<section class="acl-res">
-  <div class="acl-res__head">
-    <h2>{{ section.label }} <span class="acl-res__type">{{ section.type }}</span></h2>
-  </div>
+<h2>{{ section.label }} <code>{{ section.type }}</code></h2>
+<p class="acl-desc">{{ section.description }}</p>
 
-  <p class="acl-res__desc">{{ section.description }}</p>
-
-  <h3>Permissions model</h3>
-  <p class="acl-res__note">{{ section.blurb }}</p>
-  <table class="acl-res__roles">
-    <thead>
-      <tr><th>Role</th><th>Can manage</th><th>What it grants</th></tr>
-    </thead>
-    <tbody>
-      {% for role in section.roles %}
-      <tr>
-        <td>{{ role.name }}</td>
-        <td>{% if role.manage %}<span class="acl-res__manage">✓ manage</span>{% else %}—{% endif %}</td>
-        <td>{{ role.description }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  <p class="acl-res__sharing">
-    Can be shared with: {{ section.sharing }}
-    <span style="color:#8a949e;">(dialog <code>features="{{ section.features or "all" }}"</code>)</span>
-  </p>
-
-  <h3>Instances</h3>
-  <ul class="acl-res__instances">
-    {% for inst in section.instances %}
-    <li class="acl-res__instance">
-      <span class="acl-res__instance-title">{{ inst.title }}</span>
+<ul class="acl-instances">
+  {% for inst in section.instances %}
+  <li class="acl-inst">
+    <div class="acl-inst__main">
+      <span class="acl-inst__title">{{ inst.title }}</span>
       {% if inst.role %}
-        <span class="acl-res__role{% if inst.can_manage %} acl-res__role--manage{% endif %}">{{ inst.role }}</span>
+        <span class="acl-role{% if inst.can_manage %} acl-role--manage{% endif %}">{{ inst.role }}</span>
       {% else %}
-        <span class="acl-res__role acl-res__role--none">no access</span>
+        <span class="acl-role acl-role--none">no access</span>
       {% endif %}
-      <span class="acl-res__instance-blurb">{{ inst.blurb }}</span>
       <datasette-acl-share-dialog
         resource-type="{{ section.type }}"
         parent="{{ inst.id }}"
@@ -132,9 +104,62 @@
         {% if actor_json %}actor-json='{{ actor_json|safe }}'{% endif %}
         {% if not inst.can_manage %}disabled{% endif %}
       ></datasette-acl-share-dialog>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
+    </div>
+    {% if inst.blurb %}<p class="acl-inst__blurb">{{ inst.blurb }}</p>{% endif %}
+
+    {% if inst.can_manage %}
+    <div class="acl-inst__admin">
+      <details class="acl-edit">
+        <summary>Edit</summary>
+        <form method="post" action="{{ urls.path('/sample-resources/edit') }}">
+          <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
+          <input type="hidden" name="type" value="{{ section.type }}">
+          <input type="hidden" name="id" value="{{ inst.id }}">
+          <input type="text" name="title" value="{{ inst.title }}" placeholder="Title">
+          <input type="text" name="blurb" value="{{ inst.blurb }}" placeholder="Short blurb">
+          <button class="acl-btn" type="submit">Save</button>
+        </form>
+      </details>
+      <span class="acl-dot">·</span>
+      <form class="inline" method="post" action="{{ urls.path('/sample-resources/delete') }}"
+            onsubmit="return confirm('Delete “{{ inst.title }}”? This removes its grants too.')">
+        <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
+        <input type="hidden" name="type" value="{{ section.type }}">
+        <input type="hidden" name="id" value="{{ inst.id }}">
+        <button class="acl-linkbtn" type="submit">Delete</button>
+      </form>
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
 {% endfor %}
+
+<div class="acl-create">
+  <h2>Create a resource</h2>
+  {% if actor_id %}
+  <p class="acl-desc">
+    Adds a new instance you'll own (the type's top manage role), so you can
+    immediately share it.
+  </p>
+  <form method="post" action="{{ urls.path('/sample-resources/create') }}">
+    <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
+    <label>Type
+      <select name="type">
+        {% for t in types %}<option value="{{ t.type }}">{{ t.label }} ({{ t.type }})</option>{% endfor %}
+      </select>
+    </label>
+    <label>Title
+      <input type="text" name="title" placeholder="My new resource" required>
+    </label>
+    <label>Blurb <span style="color:#8a949e;">(optional)</span>
+      <input type="text" name="blurb" placeholder="What's special about it">
+    </label>
+    <button class="acl-btn" type="submit">Create</button>
+  </form>
+  {% else %}
+  <p class="acl-desc">Log in via the debug bar to create a resource.</p>
+  {% endif %}
+</div>
+</div>
 {% endblock %}

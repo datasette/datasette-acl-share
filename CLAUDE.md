@@ -117,24 +117,37 @@ registries deliberately span the spectrum, and seeds a few instances of each:
 
 Each type's specs live in the **`sample_resource_specs/`** package — one
 pure-data module per type exporting a `SPEC` dict (type, label, features,
-actions, roles, and `instances`). Add a resource type by dropping a module there
-and appending it to `RESOURCE_SPECS`; `sample_resources.py` does all the
+actions, roles, and demo `instances`). Add a resource type by dropping a module
+there and appending it to `RESOURCE_SPECS`; `sample_resources.py` does all the
 plumbing (builds a parent-only `Resource` subclass per spec via
-`register_actions` + `datasette_acl_roles`, seeds grants lazily via
-`_ensure_seed_grants`). A spec's `instances` entry is `{id, title, blurb,
-grants}`; each grant is `{role + one of actor|group|public}` (group names
-resolve to newsroom dynamic-group ids; `public` is an audience name).
+`register_actions` + `datasette_acl_roles`). A spec's `instances` entry is
+`{id, title, blurb, grants}`; each grant is `{role + one of actor|group|public}`
+(group names resolve to newsroom dynamic-group ids; `public` is an audience
+name).
 
-Instances are seeded across the whole gotham cast in varied shapes (group
+**Instances are real, editable DB rows**, not hardcoded. They live in a
+`sample_resource_instances(type, id, title, blurb)` table in Datasette's
+**internal database** — the same db acl runs each type's `resources_sql` against
+(it `SELECT`s from this table, so a create/delete is visible to acl
+immediately). The `startup` hook creates the table and backfills the demo rows
+(`INSERT OR IGNORE`); their grants are seeded lazily on first request via
+`_ensure_seed_grants` (acl's tables must exist first). The page has
+create/edit/delete routes (`/sample-resources/{create,edit,delete}`, POST,
+CSRF-protected): creating grants the creator the type's **top manage role** (so
+they can share it straight away); edit/delete are gated server-side on
+`can_manage`. The internal db is in-memory under `just dev`, so edits last for
+the process and reset to the demo set on restart.
+
+Demo instances are seeded across the whole gotham cast in varied shapes (group
 grants, cross-newsroom, named-people-only, public audiences) with managers
 spread around — **Clark manages at least one of every type**, but bruce/lois/
-jimmy/alfred each manage some too, and a few instances are deliberately
-**single-manager** (e.g. project *Whistleblower*, channel *#announcements*) to
-exercise the orphan guard. On the page each instance is tagged with **your**
-highest role (or "no access", via `_highest_role_for_actor` → acl's
-`role_for_actions`), and its share trigger is `disabled` unless you can manage
-it (acl's read endpoint is manager-only). There's no per-instance subpage and no
-view-gating — everything renders, the badges just change per actor.
+jimmy/alfred each manage some too, and a few are deliberately **single-manager**
+(e.g. project *Whistleblower*, channel *#announcements*) to exercise the orphan
+guard. The page is a single centred column: per type an `h2` + one-line
+description + the instance list, each instance tagged with **your** highest role
+(or "no access", via `_highest_role_for_actor` → acl's `role_for_actions`) with
+its share trigger `disabled` unless you can manage it. No per-instance subpage
+and no view-gating — everything renders, the badges just change per actor.
 
 Switch actors with the **debug bar** (gotham, via datasette-debug-bar) — it sets
 the `actor` cookie. user-profiles (seeded by gotham) gives names/avatars/search;
@@ -163,9 +176,11 @@ actor (lois, jimmy) inherits it. Try a single-manager instance (project
   `disabled`. Lazy load on open.
 - Agent picker feature **removed** (see below).
 - Sample-resources demo: one `/sample-resources` page over four acl resource
-  types with deliberately varied role registries, each seeded with several
-  instances across preseeded sharing shapes, gotham newsrooms wired as acl
-  dynamic groups, and a per-instance badge of each actor's role.
+  types with deliberately varied role registries, each backfilled with several
+  **editable** instances (a `sample_resource_instances` table in the internal
+  db; create/edit/delete routes) across preseeded sharing shapes, gotham
+  newsrooms wired as acl dynamic groups, and a per-instance badge of each
+  actor's role.
 - Plugin-author integration guide at `docs/integration-guide.md`.
 - Aligned to acl's first-class public-audience model (`everyone` /
   `authenticated` / `anonymous`; wildcard ids retired): mutations send the

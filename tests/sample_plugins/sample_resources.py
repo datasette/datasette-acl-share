@@ -1,14 +1,13 @@
-"""The sample plugin: many resource types, many instances, varied ACL shapes.
+"""The sample plugin: many resource types, editable instances, varied ACL shapes.
 
 This is the demo `just dev` serves. It registers several acl resource types
-whose role registries deliberately span the spectrum, seeds a handful of
-*instances* of each across the gotham cast with different sharing shapes, then
-serves ONE ``/sample-resources`` page that embeds
-``<datasette-acl-share-dialog>`` against every instance. The point is to see, on
-a single page, lots of different "documents" — playlists, projects, pastes,
-channels — each shared with different people, groups and public audiences, so
-switching actors in the debug bar visibly recolours the whole page (your role on
-each, and which dialogs you can open).
+whose role registries deliberately span the spectrum, then serves one
+``/sample-resources`` page that embeds ``<datasette-acl-share-dialog>`` against
+every instance. The point is to see, on a single page, lots of different
+"documents" — playlists, projects, pastes, channels — each shared with different
+people, groups and public audiences, so switching actors in the debug bar
+visibly recolours the whole page (your role on each, and which dialogs you can
+open).
 
 The resource types (one ``sample_resource_specs`` module each):
 
@@ -20,17 +19,22 @@ The resource types (one ``sample_resource_specs`` module each):
 - ``paste``    — the "simple" shape: just **Viewer** + **Owner** (a literal
   ``Owner`` role, no Editor tier) plus a public audience. Owner-and-public only.
 - ``channel``  — the odd, maximal one: five cumulative tiers with **two**
-  manage-capable roles (Moderator and Owner), exercising last-manager counting,
-  owner-first ordering and the role dropdown with a deep registry.
+  manage-capable roles (Moderator and Owner).
 
-Each type passes a different ``features`` attribute to show section gating
-(people-only, people+public, or everything), and each carries a few instances —
-including some with a *single* manager, so the dialog's orphan guard (you can't
-remove/downgrade the last manager) is exercised too.
+Instances are **real, editable rows**. They live in a ``sample_resource_instances``
+table in Datasette's internal database — the same database acl runs each type's
+``resources_sql`` against — so the page can create / edit / delete them and acl
+sees the change immediately. On startup the table is created and the demo
+instances from the specs are backfilled (``INSERT OR IGNORE``); their grants are
+seeded lazily on first request (acl's tables must exist first). Creating an
+instance grants its creator the type's top manage role; editing and deleting are
+gated on ``can_manage`` (acl's read endpoint is manager-only anyway). The
+internal db is in-memory under ``just dev``, so edits last for the process and
+reset to the demo set on restart.
 
-The resource-type specs live in the ``sample_resource_specs`` package next to
-this file (one module per type) — add a module there to add a resource type;
-no change here is needed. Each spec is a dict:
+Each type's specs live in the ``sample_resource_specs`` package (one module per
+type) — add a module there to add a resource type; no change here is needed.
+Each spec is a dict:
 
   type        acl resource_type name (and Resource.name).
   label       human heading for the gallery section.
@@ -41,15 +45,12 @@ no change here is needed. Each spec is a dict:
   actions   [(action_name, description)] — registered via register_actions.
   roles     [(name, [actions], rank, manage, description)] — the registry.
             A "standard" key instead means: build it with standard_roles().
-  instances [{id, title, blurb, grants}]. grants is
+  instances [{id, title, blurb, grants}] — backfilled into the table. grants is
             [{role + one of actor|group|public}], seeded so the resource opens
             onto a realistic roster.
 
-Grants are seeded lazily on first request (acl's tables must exist first). On
-the page each instance is tagged with the current actor's highest role (or "no
-access"), and its share trigger is enabled only when the actor can manage it
-(acl's read endpoint is manager-only). Log in as **Clark** via the debug bar —
-he manages at least one instance of every type — to drive the whole gallery.
+Log in as **Clark** via the debug bar — he manages at least one instance of
+every type — to drive the whole gallery.
 
 Loaded via ``--plugins-dir tests/sample_plugins``. It reuses gotham's
 actors/groups and the same asset-injection discipline, gated to
@@ -58,6 +59,7 @@ actors/groups and the same asset-injection discipline, gated to
 
 import json
 import os
+import re
 import sys
 
 from datasette import hookimpl, Response
@@ -73,27 +75,35 @@ from datasette_acl_share import datasette_share_assets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sample_resource_specs import RESOURCE_SPECS  # noqa: E402
 
+_SPECS_BY_TYPE = {spec["type"]: spec for spec in RESOURCE_SPECS}
+_INSTANCES_TABLE = "sample_resource_instances"
+
 
 # --- Resource classes, built from the specs --------------------------------
 
 
 def _make_resource_class(spec):
-    """A parent-only Resource subclass exposing this spec's instances."""
-    instance_ids = [inst["id"] for inst in spec["instances"]]
+    """A parent-only Resource subclass enumerating this type's instances.
+
+    ``resources_sql`` is run by acl against the internal database, which is
+    exactly where the editable instances table lives — so adding/removing a row
+    there immediately changes which resources of this type exist.
+    """
+    resource_type = spec["type"]
 
     class _SampleResource(Resource):
-        name = spec["type"]
+        name = resource_type
         parent_class = None
 
         @classmethod
         async def resources_sql(cls, datasette, actor=None):
             # Two columns (parent, child); one row per instance of this type.
-            return " UNION ALL ".join(
-                f"SELECT '{instance_id}' AS parent, NULL AS child"
-                for instance_id in instance_ids
+            return (
+                "SELECT id AS parent, NULL AS child "
+                f"FROM {_INSTANCES_TABLE} WHERE type = '{resource_type}'"
             )
 
-    _SampleResource.__name__ = f"Resource_{spec['type']}"
+    _SampleResource.__name__ = f"Resource_{resource_type}"
     return _SampleResource
 
 
@@ -117,6 +127,13 @@ def _roles_for_spec(spec):
         )
         for (name, actions, rank, manage, description) in spec["roles"]
     ]
+
+
+def _top_manage_role(spec):
+    """The type's highest-rank manage-capable role — granted to a new instance's
+    creator so they can immediately manage sharing."""
+    manage = [r for r in _roles_for_spec(spec) if r.manage]
+    return max(manage, key=lambda r: r.rank).name if manage else None
 
 
 # --- acl hooks -------------------------------------------------------------
@@ -143,7 +160,41 @@ def datasette_acl_roles(datasette):
     return roles
 
 
-# --- seeding ---------------------------------------------------------------
+# --- the instances table: schema + backfill --------------------------------
+
+
+async def _ensure_instances(datasette):
+    """Create the instances table and backfill the demo rows. Idempotent."""
+    db = datasette.get_internal_database()
+    await db.execute_write(
+        f"""CREATE TABLE IF NOT EXISTS {_INSTANCES_TABLE} (
+            type TEXT NOT NULL,
+            id TEXT NOT NULL,
+            title TEXT NOT NULL,
+            blurb TEXT NOT NULL DEFAULT '',
+            PRIMARY KEY (type, id)
+        )"""
+    )
+    for spec in RESOURCE_SPECS:
+        for inst in spec["instances"]:
+            await db.execute_write(
+                f"INSERT OR IGNORE INTO {_INSTANCES_TABLE} (type, id, title, blurb) "
+                "VALUES (?, ?, ?, ?)",
+                [spec["type"], inst["id"], inst["title"], inst.get("blurb", "")],
+            )
+
+
+@hookimpl
+def startup(datasette):
+    # Create the instances table + backfill before any request, so acl's
+    # resources_sql (which SELECTs from it) always has a table to read.
+    async def inner():
+        await _ensure_instances(datasette)
+
+    return inner
+
+
+# --- grant seeding ---------------------------------------------------------
 
 
 async def _resolve_group_id(db, name):
@@ -155,7 +206,7 @@ async def _resolve_group_id(db, name):
 
 
 async def _ensure_seed_grants(datasette):
-    """Seed every instance's grants. Lazy: acl's tables must exist first."""
+    """Seed every demo instance's grants. Lazy: acl's tables must exist first."""
     if getattr(datasette, "_sample_resources_seeded", False):
         return
     from datasette_acl.grants import grant, Principal
@@ -235,25 +286,13 @@ def homepage_actions(datasette, actor, request):
 # --- page ------------------------------------------------------------------
 
 
-def _sharing_label(features):
-    """Human-readable "what can this be shared with" from the features attr."""
-    names = {
-        "people": "named people",
-        "groups": "groups",
-        "public": "public audiences",
-    }
-    parts = [p.strip() for p in features.split(",")] if features else list(names)
-    labels = [names.get(p, p) for p in parts]
-    if len(labels) == 1:
-        return labels[0]
-    return ", ".join(labels[:-1]) + " and " + labels[-1]
-
-
 async def gallery_page(request, datasette):
     from datasette_acl.utils import can_manage
 
+    await _ensure_instances(datasette)
     await _ensure_seed_grants(datasette)
 
+    db = datasette.get_internal_database()
     actor = request.actor or {}
     actor_json = ""
     if actor.get("id"):
@@ -261,24 +300,23 @@ async def gallery_page(request, datasette):
 
     sections = []
     for spec in RESOURCE_SPECS:
-        # Roles, lowest-rank first, with the manage flag + description so the
-        # page can lay out the permissions model once per type.
-        roles = [
-            {"name": r.name, "manage": bool(r.manage), "description": r.description}
-            for r in sorted(_roles_for_spec(spec), key=lambda r: r.rank)
-        ]
+        rows = await db.execute(
+            f"SELECT id, title, blurb FROM {_INSTANCES_TABLE} "
+            "WHERE type = ? ORDER BY rowid",
+            [spec["type"]],
+        )
         instances = []
-        for instance in spec["instances"]:
+        for row in rows.rows:
             instances.append(
                 {
-                    "id": instance["id"],
-                    "title": instance["title"],
-                    "blurb": instance.get("blurb", ""),
+                    "id": row["id"],
+                    "title": row["title"],
+                    "blurb": row["blurb"],
                     "role": await _highest_role_for_actor(
-                        datasette, spec, instance["id"], request.actor
+                        datasette, spec, row["id"], request.actor
                     ),
                     "can_manage": await can_manage(
-                        datasette, request.actor, spec["type"], instance["id"]
+                        datasette, request.actor, spec["type"], row["id"]
                     ),
                 }
             )
@@ -287,10 +325,7 @@ async def gallery_page(request, datasette):
                 "type": spec["type"],
                 "label": spec["label"],
                 "description": spec["description"],
-                "blurb": spec["blurb"],
                 "features": spec["features"],
-                "sharing": _sharing_label(spec["features"]),
-                "roles": roles,
                 "instances": instances,
             }
         )
@@ -298,12 +333,136 @@ async def gallery_page(request, datasette):
     return Response.html(
         await datasette.render_template(
             "sample_resources.html",
-            {"sections": sections, "actor_json": actor_json},
+            {
+                "sections": sections,
+                "actor_json": actor_json,
+                "actor_id": actor.get("id", ""),
+                "types": [
+                    {"type": s["type"], "label": s["label"]} for s in RESOURCE_SPECS
+                ],
+            },
             request=request,
         )
     )
 
 
+# --- create / edit / delete ------------------------------------------------
+
+
+def _slugify(text):
+    slug = re.sub(r"[^a-z0-9]+", "-", (text or "").lower()).strip("-")
+    return slug or "untitled"
+
+
+async def _unique_id(db, resource_type, base):
+    """A slug unique within this type, suffixing -2, -3, … on collision."""
+    candidate, n = base, 1
+    while (
+        await db.execute(
+            f"SELECT 1 FROM {_INSTANCES_TABLE} WHERE type = ? AND id = ?",
+            [resource_type, candidate],
+        )
+    ).rows:
+        n += 1
+        candidate = f"{base}-{n}"
+    return candidate
+
+
+def _redirect():
+    return Response.redirect("/sample-resources")
+
+
+async def create_instance(request, datasette):
+    from datasette_acl.grants import grant, Principal
+
+    await _ensure_instances(datasette)
+    actor = request.actor or {}
+    post = await request.post_vars()
+    resource_type = post.get("type", "")
+    spec = _SPECS_BY_TYPE.get(resource_type)
+    title = (post.get("title") or "").strip()
+    # Only signed-in actors can create, and only known types.
+    if not actor.get("id") or spec is None or not title:
+        return _redirect()
+
+    db = datasette.get_internal_database()
+    instance_id = await _unique_id(db, resource_type, _slugify(title))
+    await db.execute_write(
+        f"INSERT INTO {_INSTANCES_TABLE} (type, id, title, blurb) VALUES (?, ?, ?, ?)",
+        [resource_type, instance_id, title, (post.get("blurb") or "").strip()],
+    )
+    # Give the creator the type's top manage role so they can share it.
+    role = _top_manage_role(spec)
+    if role:
+        await grant(
+            datasette,
+            resource_type,
+            instance_id,
+            principal=Principal.actor(actor["id"]),
+            role=role,
+            by_actor=actor["id"],
+        )
+    return _redirect()
+
+
+async def _require_manage(request, datasette, resource_type, instance_id):
+    """True if the request's actor may edit/delete this instance."""
+    from datasette_acl.utils import can_manage
+
+    if resource_type not in _SPECS_BY_TYPE:
+        return False
+    return await can_manage(datasette, request.actor, resource_type, instance_id)
+
+
+async def edit_instance(request, datasette):
+    await _ensure_instances(datasette)
+    post = await request.post_vars()
+    resource_type, instance_id = post.get("type", ""), post.get("id", "")
+    if not await _require_manage(request, datasette, resource_type, instance_id):
+        return _redirect()
+    db = datasette.get_internal_database()
+    await db.execute_write(
+        f"UPDATE {_INSTANCES_TABLE} SET title = ?, blurb = ? WHERE type = ? AND id = ?",
+        [
+            (post.get("title") or "").strip() or instance_id,
+            (post.get("blurb") or "").strip(),
+            resource_type,
+            instance_id,
+        ],
+    )
+    return _redirect()
+
+
+async def delete_instance(request, datasette):
+    await _ensure_instances(datasette)
+    post = await request.post_vars()
+    resource_type, instance_id = post.get("type", ""), post.get("id", "")
+    if not await _require_manage(request, datasette, resource_type, instance_id):
+        return _redirect()
+    db = datasette.get_internal_database()
+    # Drop the row and its acl grants together (resource addressed parent-only).
+    await db.execute_write(
+        f"DELETE FROM acl WHERE resource_id IN (SELECT id FROM acl_resources "
+        "WHERE resource_type = ? AND parent = ? AND child IS NULL)",
+        [resource_type, instance_id],
+    )
+    await db.execute_write(
+        "DELETE FROM acl_resources WHERE resource_type = ? AND parent = ? "
+        "AND child IS NULL",
+        [resource_type, instance_id],
+    )
+    await db.execute_write(
+        f"DELETE FROM {_INSTANCES_TABLE} WHERE type = ? AND id = ?",
+        [resource_type, instance_id],
+    )
+    return _redirect()
+
+
 @hookimpl
 def register_routes():
-    return [(r"^/sample-resources$", gallery_page)]
+    return [
+        (r"^/sample-resources$", gallery_page),
+        (r"^/sample-resources/create$", create_instance),
+        (r"^/sample-resources/edit$", edit_instance),
+        (r"^/sample-resources/delete$", delete_instance),
+    ]
