@@ -30,20 +30,22 @@ The element renders a compact **share-icon button**; clicking it opens a modal
 fetched lazily on first open, so a page can carry many share buttons cheaply.
 
 Once open, the dialog shows "people with access" (avatars, role dropdowns,
-remove buttons), a "General access" section, and an add-box that searches
-people (profiles) and groups (acl). Each action is its own fetch — grant /
-update / revoke — matching Google Docs' incremental behaviour. Actors who
-cannot manage the resource (`can_manage: false`) get a read-only roster: roles
-as tags, no add-box, no remove buttons.
+remove buttons) and a "General access" section. The **last row of the roster is
+an inline add-row**: one unified box searches people (profiles) *and* groups
+(acl) together, stages your picks as pills, then a role dropdown + **Add**
+confirm them — all in place, no separate add panel. Each action is its own fetch
+— grant / update / revoke — matching Google Docs' incremental behaviour. Actors
+who cannot manage the resource (`can_manage: false`) get a read-only roster:
+roles as tags, no add-row, no remove buttons.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/people-search.png" alt="The add-box open, searching people as you type, showing avatar results"></td>
-<td width="50%"><img src="docs/screenshots/people-selected.png" alt="A searched person staged as a removable pill with a role dropdown and Share button, before sharing"></td>
+<td width="50%"><img src="docs/screenshots/search-unified.png" alt="The inline add-row's search open, results split into People and Groups sub-sections"></td>
+<td width="50%"><img src="docs/screenshots/people-selected.png" alt="A searched person staged as a removable pill inside the add-row, with a role dropdown and Add button, before confirming"></td>
 </tr>
 <tr>
-<td align="center"><em>Search people as you type (profiles)</em></td>
-<td align="center"><em>Picked person staged with a role, before hitting Share</em></td>
+<td align="center"><em>One search, people <strong>and</strong> groups together</em></td>
+<td align="center"><em>Picks staged inline with a role, before hitting Add</em></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/screenshots/public.png" alt="The General access control set to 'Anyone signed in' with a Viewer role"></td>

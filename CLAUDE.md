@@ -49,6 +49,15 @@ fetched lazily on first open (so many buttons on a page cost no network until
 used). Light DOM (`shadow: "none"`), CSS selectors prefixed
 `datasette-acl-share-dialog__*`. Attributes are kebab-case.
 
+**Adding access** is an **inline add-row** — the last row of the roster table
+(not a separate panel, and no People/Groups tabs). One unified combobox searches
+people (profiles, async) and groups (acl, fetched once + filtered locally) at
+the same time, merging both into one results dropdown under `People` / `Groups`
+sub-headers (sub-headers shown only when both backends are present). Picks stage
+as pills inside the field; a shared role `<select>` + **Add** button grant them
+in a batch. The dropdown opens *upward* (the add-row sits at the dialog bottom).
+`canManage === false` ⇒ no add-row at all.
+
 Attributes: `resource-type` (req), `parent` (req), `child`, `resource-label`,
 `actor-json`, `api-base`, `features` (`people,groups,public`),
 `open` (open on mount; non-`"false"`), `trigger-label`, `disabled`.
@@ -158,8 +167,8 @@ clark/lois/jimmy, `gotham-gazette` = bruce/alfred/selina). Gotham itself has no
 acl code — `just dev` turns these into acl **dynamic groups** via config:
 `-s plugins.datasette-acl.dynamic-groups.<name>.newsroom <name>`. acl pre-creates
 the `acl_groups` rows at startup and recomputes membership per-actor from the
-attribute, so both newsrooms show up in the dialog's **Groups** picker and are
-grantable — no manual roster. (`member_count` in the groups endpoint fills in
+attribute, so both newsrooms surface under the **Groups** sub-section of the
+dialog's unified add-row search and are grantable — no manual roster. (`member_count` in the groups endpoint fills in
 lazily as acl resolves each actor.) To add a new newsroom group: add another
 `dynamic-groups.<name>.newsroom <name>` flag — no plugin change needed.
 

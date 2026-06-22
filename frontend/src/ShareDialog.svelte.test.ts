@@ -337,7 +337,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const input = page.getByRole("combobox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
     await expect.element(input).toBeInTheDocument();
     await input.fill("car");
 
@@ -380,7 +380,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     const { events } = mount(BASE_ATTRS);
-    const input = page.getByRole("combobox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
     await expect.element(input).toBeInTheDocument();
 
     // Pick Carol — she becomes a removable pill, not an immediate grant.
@@ -400,7 +400,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
       .toBeInTheDocument();
 
     // Share grants BOTH pills at the chosen role.
-    const shareBtn = page.getByRole("button", { name: "Share", exact: true });
+    const shareBtn = page.getByRole("button", { name: "Add", exact: true });
     await shareBtn.click();
 
     await vi.waitFor(() => {
@@ -434,10 +434,10 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const shareBtn = page.getByRole("button", { name: "Share", exact: true });
+    const shareBtn = page.getByRole("button", { name: "Add", exact: true });
     await expect.element(shareBtn).toBeDisabled();
 
-    const input = page.getByRole("combobox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
     await input.fill("ca");
     await page.getByRole("option", { name: /Carol Smith/ }).click();
     await expect.element(shareBtn).toBeEnabled();
@@ -450,7 +450,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const input = page.getByRole("combobox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
     await input.fill("ca");
     await page.getByRole("option", { name: /Carol Smith/ }).click();
     const removeBtn = page.getByRole("button", { name: "Remove Carol Smith" });
@@ -462,7 +462,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
       ).toBe(0),
     );
     await expect
-      .element(page.getByRole("button", { name: "Share", exact: true }))
+      .element(page.getByRole("button", { name: "Add", exact: true }))
       .toBeDisabled();
   });
 
@@ -478,7 +478,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const input = page.getByRole("combobox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
     await input.fill("a");
     await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
 
@@ -501,7 +501,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const input = page.getByRole("combobox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
     await input.fill("ca");
     await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
 
@@ -521,7 +521,7 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     on("/resource/", () => json(STATE));
 
     mount(BASE_ATTRS);
-    const input = page.getByRole("combobox", { name: "Search people" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
     await expect.element(input).toBeInTheDocument();
     await input.fill("bob");
     // The result for bob should be filtered out (already granted): no option,
@@ -539,26 +539,47 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
     expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
   });
 
-  it("hides the Groups tab when the groups capability is absent", async () => {
+  it("without the groups capability the picker searches only people", async () => {
+    on("/profiles/api/search", () =>
+      json({ results: [{ id: "carol", display_name: "Carol Smith", kind: "user" }] }),
+    );
     on("/resource/", () => json(STATE));
     mount({ ...BASE_ATTRS, features: "people,public" });
-    // Wait for load, then assert the groups tab isn't present (only People
-    // remains, so the tablist collapses to a single picker).
-    await expect.element(page.getByText("Bob Editor")).toBeInTheDocument();
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
+    await input.fill("ca");
+    await expect.element(page.getByText("Carol Smith")).toBeInTheDocument();
+    // No "Groups" subheader, and the groups endpoint was never hit.
     expect(
-      document.querySelector("[role='tab'][id='datasette-acl-share-tab-groups']"),
+      document.querySelector(".datasette-acl-share-dialog__result-group"),
     ).toBeNull();
+    expect(calls.find((c) => c.url.includes("/groups"))).toBeFalsy();
   });
 
-  it("shows People and Groups tabs when both capabilities are present", async () => {
+  it("with both capabilities the picker merges people and groups under subheaders", async () => {
+    on("/profiles/api/search", () =>
+      json({ results: [{ id: "carol", display_name: "Carol Smith", kind: "user" }] }),
+    );
+    on("/groups", () =>
+      json({ groups: [{ id: 9, name: "Carol Team", member_count: 3 }] }),
+    );
     on("/resource/", () => json(STATE));
     mount({ ...BASE_ATTRS, features: "people,groups,public" });
+    const input = page.getByRole("combobox", { name: "Add people or groups" });
+    await expect.element(input).toBeInTheDocument();
+    // Focus loads the groups list; typing runs the people search. "car" matches
+    // both Carol Smith (person) and Carol Team (group), so both sources show.
+    (input.element() as HTMLInputElement).focus();
+    await input.fill("car");
     await expect
-      .element(page.getByRole("tab", { name: "People" }))
+      .element(page.getByRole("option", { name: /Carol Smith/ }))
       .toBeInTheDocument();
     await expect
-      .element(page.getByRole("tab", { name: "Groups" }))
+      .element(page.getByRole("option", { name: /Carol Team/ }))
       .toBeInTheDocument();
+    const headers = [
+      ...document.querySelectorAll(".datasette-acl-share-dialog__result-group"),
+    ].map((e) => e.textContent?.trim());
+    expect(headers).toEqual(["People", "Groups"]);
   });
 });
 

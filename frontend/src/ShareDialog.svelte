@@ -11,7 +11,7 @@
 <script lang="ts">
   import { ShareApi, ShareApiError, capabilitiesFromFeatures } from "./lib/api";
   import { avatarColor, initials, kindBadge } from "./lib/avatar";
-  import { ICON_GLOBE, ICON_LOCK, ICON_PEOPLE } from "./lib/icons";
+  import { ICON_GLOBE, ICON_LOCK, ICON_PEOPLE, ICON_PLUS } from "./lib/icons";
   import {
     currentWildcardGrant,
     defaultPickerRole,
@@ -380,27 +380,11 @@
   let dropdownRoles = $derived(selectableRoles(share?.roles ?? []));
 
   // --- add-box picker ------------------------------------------------------
-
-  type PickerTab = "people" | "groups";
-
-  // The tabs to show, in order, gated by capability.
-  let pickerTabs = $derived.by<PickerTab[]>(() => {
-    const tabs: PickerTab[] = [];
-    if (caps.people) tabs.push("people");
-    if (caps.groups) tabs.push("groups");
-    return tabs;
-  });
-
-  let activeTab = $state<PickerTab | null>(null);
-
-  // Keep the active tab valid as capabilities resolve.
-  $effect(() => {
-    if (pickerTabs.length === 0) {
-      activeTab = null;
-    } else if (activeTab == null || !pickerTabs.includes(activeTab)) {
-      activeTab = pickerTabs[0]!;
-    }
-  });
+  // Unified people-or-groups search: one combobox queries People (async, via
+  // profiles) and Groups (acl, fetched once then filtered locally) at the same
+  // time, merging both into a single results dropdown — no tabs. Available
+  // whenever the actor can manage and at least one backend is present.
+  let pickerAvailable = $derived(canManage && (caps.people || caps.groups));
 
   let query = $state("");
   // Raw results for the current tab + query (before dedupe/filter).
@@ -450,19 +434,23 @@
     ),
   );
 
-  // The active tab's options as a flat list of pills, for keyboard navigation
-  // and Enter-to-pick. Order matches the rendered listbox.
-  let optionPills = $derived.by<Pill[]>(() => {
-    if (activeTab === "people") return peopleOptions.map(pillFromActor);
-    if (activeTab === "groups") return groupOptions.map(pillFromGroup);
-    return [];
-  });
+  // Each source as its own pill list (rendered under a "People"/"Groups"
+  // subheader when both are present), plus a flat concatenation for keyboard
+  // navigation + Enter-to-pick. People come first, then groups; the flat order
+  // must match the rendered listbox so `highlight` indexes line up.
+  let peoplePills = $derived(
+    caps.people ? peopleOptions.map(pillFromActor) : [],
+  );
+  let groupPills = $derived(
+    caps.groups ? groupOptions.map(pillFromGroup) : [],
+  );
+  let optionPills = $derived<Pill[]>([...peoplePills, ...groupPills]);
+  // Show the subheaders only when both backends can contribute results.
+  let showResultGroups = $derived(caps.people && caps.groups);
 
   // Whether the floating results overlay should be visible: open + something
   // to show (results, the "searching…"/"empty" hint, or a picker error).
-  let showDropdown = $derived(
-    dropdownOpen && canManage && activeTab != null,
-  );
+  let showDropdown = $derived(dropdownOpen && pickerAvailable);
 
   // Keep the highlight within bounds as the option list changes.
   $effect(() => {
@@ -501,26 +489,11 @@
     }
   }
 
-  function selectTab(tab: PickerTab) {
-    if (activeTab === tab) return;
-    activeTab = tab;
-    query = "";
-    pickerError = null;
-    highlight = -1;
-    runPeopleSearch.cancel();
-    if (tab === "groups") {
-      void loadGroups();
-      openDropdown();
-    } else {
-      dropdownOpen = false;
-    }
-  }
-
   function onQueryInput(event: Event) {
     query = (event.currentTarget as HTMLInputElement).value;
     highlight = -1;
     openDropdown();
-    if (activeTab === "people") runPeopleSearch(query);
+    if (caps.people) runPeopleSearch(query);
     // groups filter locally via the derived list — no request needed.
   }
 
@@ -531,8 +504,9 @@
   function onSearchFocus() {
     // Re-open on focus so a dismissed dropdown comes back without retyping.
     openDropdown();
-    // Groups list locally; (re)load if we haven't yet.
-    if (activeTab === "groups" && groupList.length === 0 && !searching) {
+    // Groups are listed once then filtered locally; (re)load if we haven't yet
+    // so they're ready to surface alongside people results.
+    if (caps.groups && groupList.length === 0 && !searching) {
       void loadGroups();
     }
   }
@@ -553,9 +527,9 @@
     peopleResults = [];
     runPeopleSearch.cancel();
     searchEl?.focus();
-    // People have nothing to show until the next keystroke; groups keep their
-    // (now-shorter) filtered list visible.
-    if (activeTab !== "groups") dropdownOpen = false;
+    // Keep the dropdown open so the user can keep adding: people need a fresh
+    // keystroke, while any groups stay visible (now filtered by the empty
+    // query, i.e. the full list minus what's already picked/granted).
   }
 
   function removePillAt(pill: Pill) {
@@ -705,10 +679,13 @@
 
   function pickerEmptyMessage(): string {
     if (searching) return "Searching…";
-    if (activeTab === "people") {
-      return query.trim() ? "No people found" : "Type to search people";
-    }
-    return "No groups";
+    const what =
+      caps.people && caps.groups
+        ? "people or groups"
+        : caps.groups
+          ? "groups"
+          : "people";
+    return query.trim() ? `No ${what} found` : `Type to search ${what}`;
   }
 
   // --- general access ------------------------------------------------------
@@ -873,168 +850,42 @@
   {:else if loadError}
     <p class="datasette-acl-share-dialog__error" role="alert">{loadError}</p>
   {:else if share}
-    {#if canManage && pickerTabs.length > 0}
-      <section
-        class="datasette-acl-share-dialog__add"
-        aria-label="Add people or groups"
-        bind:this={addBoxEl}
-      >
-        {#if pickerTabs.length > 1}
-          <div
-            class="datasette-acl-share-dialog__tabs"
-            role="tablist"
-            aria-label="Pick principal type"
+    <!-- One search result row, rendered for both the People and Groups
+         sub-sections of the unified picker. `i` is the option's index in the
+         flat `optionPills` list so keyboard `highlight` lines up. -->
+    {#snippet resultOption(opt: Pill, i: number)}
+      <li>
+        <button
+          type="button"
+          role="option"
+          id={`datasette-acl-share-opt-${i}`}
+          aria-selected={highlight === i}
+          class="datasette-acl-share-dialog__result"
+          class:is-highlighted={highlight === i}
+          onmousemove={() => (highlight = i)}
+          onclick={() => pickOption(opt)}
+        >
+          <span
+            class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__result-avatar"
+            style:background-color={avatarColor(opt.id)}
+            aria-hidden="true"
+            >{#if opt.kind === "group"}{@html ICON_PEOPLE}{:else}{initials(
+                opt.label,
+              )}{/if}</span
           >
-            {#each pickerTabs as tab (tab)}
-              <button
-                type="button"
-                role="tab"
-                id={`datasette-acl-share-tab-${tab}`}
-                aria-selected={activeTab === tab}
-                aria-controls="datasette-acl-share-results"
-                class="datasette-acl-share-dialog__tab"
-                class:is-active={activeTab === tab}
-                onclick={() => selectTab(tab)}
+          <span class="datasette-acl-share-dialog__result-text">
+            <span class="datasette-acl-share-dialog__name">{opt.label}</span>
+            {#if opt.kind === "user" && opt.email}
+              <span class="datasette-acl-share-dialog__sub">{opt.email}</span>
+            {:else if opt.kind === "group" && opt.member_count != null}
+              <span class="datasette-acl-share-dialog__sub"
+                >{memberCountLabel(opt.member_count)}</span
               >
-                {tab === "people" ? "People" : "Groups"}
-              </button>
-            {/each}
-          </div>
-        {/if}
-
-        <div class="datasette-acl-share-dialog__add-row">
-          <!-- The search field + floating results overlay share a relatively
-               positioned wrapper, so the listbox can be absolutely positioned
-               beneath the input without reflowing the rest of the dialog. -->
-          <div class="datasette-acl-share-dialog__search-wrap">
-            <input
-              type="search"
-              bind:this={searchEl}
-              class="datasette-acl-share-dialog__search"
-              placeholder={activeTab === "groups"
-                ? "Filter groups…"
-                : "Search people…"}
-              aria-label={activeTab === "groups"
-                ? "Filter groups"
-                : "Search people"}
-              role="combobox"
-              aria-expanded={showDropdown}
-              aria-controls="datasette-acl-share-results"
-              aria-autocomplete="list"
-              aria-activedescendant={highlight >= 0
-                ? `datasette-acl-share-opt-${highlight}`
-                : undefined}
-              value={query}
-              oninput={onQueryInput}
-              onfocus={onSearchFocus}
-              onkeydown={onSearchKeydown}
-            />
-
-            {#if showDropdown}
-              <ul
-                id="datasette-acl-share-results"
-                class="datasette-acl-share-dialog__results"
-                role="listbox"
-                aria-label="Search results"
-                aria-busy={searching}
-              >
-                {#each optionPills as opt, i (pillKey(opt))}
-                  <li>
-                    <button
-                      type="button"
-                      role="option"
-                      id={`datasette-acl-share-opt-${i}`}
-                      aria-selected={highlight === i}
-                      class="datasette-acl-share-dialog__result"
-                      class:is-highlighted={highlight === i}
-                      onmousemove={() => (highlight = i)}
-                      onclick={() => pickOption(opt)}
-                    >
-                      <span
-                        class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__result-avatar"
-                        style:background-color={avatarColor(opt.id)}
-                        aria-hidden="true"
-                        >{#if opt.kind === "group"}{@html ICON_PEOPLE}{:else}{initials(
-                            opt.label,
-                          )}{/if}</span
-                      >
-                      <span class="datasette-acl-share-dialog__result-text">
-                        <span class="datasette-acl-share-dialog__name"
-                          >{opt.label}</span
-                        >
-                        {#if opt.kind === "user" && opt.email}
-                          <span class="datasette-acl-share-dialog__sub"
-                            >{opt.email}</span
-                          >
-                        {:else if opt.kind === "group" && opt.member_count != null}
-                          <span class="datasette-acl-share-dialog__sub"
-                            >{memberCountLabel(opt.member_count)}</span
-                          >
-                        {/if}
-                      </span>
-                    </button>
-                  </li>
-                {:else}
-                  <li class="datasette-acl-share-dialog__empty">
-                    {pickerEmptyMessage()}
-                  </li>
-                {/each}
-              </ul>
             {/if}
-          </div>
-
-          <select
-            class="datasette-acl-share-dialog__role-select"
-            aria-label="Role for new share"
-            bind:value={pickerRole}
-            disabled={granting}
-          >
-            {#each dropdownRoles as role (role.name)}
-              <option value={role.name}>{role.name}</option>
-            {/each}
-          </select>
-          <button
-            type="button"
-            class="datasette-acl-share-dialog__share-btn"
-            disabled={pills.length === 0 || granting || !pickerRole}
-            onclick={onShare}
-          >
-            {granting ? "Sharing…" : "Share"}
-          </button>
-        </div>
-
-        {#if pills.length > 0}
-          <ul class="datasette-acl-share-dialog__pills" aria-label="Selected to share">
-            {#each pills as pill (pillKey(pill))}
-              <li class="datasette-acl-share-dialog__pill">
-                <span
-                  class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__pill-avatar"
-                  style:background-color={avatarColor(pill.id)}
-                  aria-hidden="true"
-                  >{#if pill.kind === "group"}{@html ICON_PEOPLE}{:else}{initials(
-                      pill.label,
-                    )}{/if}</span
-                >
-                <span class="datasette-acl-share-dialog__pill-label"
-                  >{pill.label}</span
-                >
-                <button
-                  type="button"
-                  class="datasette-acl-share-dialog__pill-remove"
-                  aria-label={`Remove ${pill.label}`}
-                  disabled={granting}
-                  onclick={() => removePillAt(pill)}>×</button
-                >
-              </li>
-            {/each}
-          </ul>
-        {/if}
-
-        {#if pickerError}
-          <p class="datasette-acl-share-dialog__error" role="alert">{pickerError}</p>
-        {/if}
-      </section>
-    {/if}
+          </span>
+        </button>
+      </li>
+    {/snippet}
 
     <section
       class="datasette-acl-share-dialog__section"
@@ -1141,6 +992,137 @@
           </li>
         {/each}
       </ul>
+
+      {#if pickerAvailable}
+        <!-- Inline add-row: the last row of the roster table. Search people
+             and/or groups in one box, stage them as pills, pick a role, and
+             confirm — all in place, no separate add section. -->
+        <div
+          class="datasette-acl-share-dialog__add-row"
+          bind:this={addBoxEl}
+        >
+          <span
+            class="datasette-acl-share-dialog__add-icon"
+            aria-hidden="true">{@html ICON_PLUS}</span
+          >
+
+          <!-- The field (pills + input) and floating results overlay share a
+               relatively positioned wrapper so the listbox can absolutely
+               position beneath the field without reflowing the dialog. -->
+          <div class="datasette-acl-share-dialog__search-wrap">
+            <div class="datasette-acl-share-dialog__field">
+              {#each pills as pill (pillKey(pill))}
+                <span class="datasette-acl-share-dialog__pill">
+                  <span
+                    class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials datasette-acl-share-dialog__pill-avatar"
+                    style:background-color={avatarColor(pill.id)}
+                    aria-hidden="true"
+                    >{#if pill.kind === "group"}{@html ICON_PEOPLE}{:else}{initials(
+                        pill.label,
+                      )}{/if}</span
+                  >
+                  <span class="datasette-acl-share-dialog__pill-label"
+                    >{pill.label}</span
+                  >
+                  <button
+                    type="button"
+                    class="datasette-acl-share-dialog__pill-remove"
+                    aria-label={`Remove ${pill.label}`}
+                    disabled={granting}
+                    onclick={() => removePillAt(pill)}>×</button
+                  >
+                </span>
+              {/each}
+              <input
+                type="search"
+                bind:this={searchEl}
+                class="datasette-acl-share-dialog__search"
+                placeholder={pills.length > 0
+                  ? "Add more…"
+                  : "Add people or groups…"}
+                aria-label="Add people or groups"
+                role="combobox"
+                aria-expanded={showDropdown}
+                aria-controls="datasette-acl-share-results"
+                aria-autocomplete="list"
+                aria-activedescendant={highlight >= 0
+                  ? `datasette-acl-share-opt-${highlight}`
+                  : undefined}
+                value={query}
+                oninput={onQueryInput}
+                onfocus={onSearchFocus}
+                onkeydown={onSearchKeydown}
+              />
+            </div>
+
+            {#if showDropdown}
+              <ul
+                id="datasette-acl-share-results"
+                class="datasette-acl-share-dialog__results"
+                role="listbox"
+                aria-label="Search results"
+                aria-busy={searching}
+              >
+                {#if optionPills.length === 0}
+                  <li class="datasette-acl-share-dialog__empty">
+                    {pickerEmptyMessage()}
+                  </li>
+                {:else}
+                  {#if peoplePills.length > 0}
+                    {#if showResultGroups}
+                      <li
+                        class="datasette-acl-share-dialog__result-group"
+                        role="presentation"
+                      >
+                        People
+                      </li>
+                    {/if}
+                    {#each peoplePills as opt, i (pillKey(opt))}
+                      {@render resultOption(opt, i)}
+                    {/each}
+                  {/if}
+                  {#if groupPills.length > 0}
+                    {#if showResultGroups}
+                      <li
+                        class="datasette-acl-share-dialog__result-group"
+                        role="presentation"
+                      >
+                        Groups
+                      </li>
+                    {/if}
+                    {#each groupPills as opt, j (pillKey(opt))}
+                      {@render resultOption(opt, peoplePills.length + j)}
+                    {/each}
+                  {/if}
+                {/if}
+              </ul>
+            {/if}
+          </div>
+
+          <select
+            class="datasette-acl-share-dialog__role-select"
+            aria-label="Role for new share"
+            bind:value={pickerRole}
+            disabled={granting}
+          >
+            {#each dropdownRoles as role (role.name)}
+              <option value={role.name}>{role.name}</option>
+            {/each}
+          </select>
+          <button
+            type="button"
+            class="datasette-acl-share-dialog__share-btn"
+            disabled={pills.length === 0 || granting || !pickerRole}
+            onclick={onShare}
+          >
+            {granting ? "Adding…" : "Add"}
+          </button>
+        </div>
+
+        {#if pickerError}
+          <p class="datasette-acl-share-dialog__error" role="alert">{pickerError}</p>
+        {/if}
+      {/if}
     </section>
 
     {#if caps.public}
@@ -1447,33 +1429,28 @@
     cursor: default;
   }
 
-  /* --- add box ----------------------------------------------------------- */
-  .datasette-acl-share-dialog__add {
-    margin-bottom: 0.5rem;
-  }
-  .datasette-acl-share-dialog__tabs {
-    display: flex;
-    gap: 0.25rem;
-    margin-bottom: 0.5rem;
-  }
-  .datasette-acl-share-dialog__tab {
-    font-size: 0.8125rem;
-    padding: 0.25rem 0.625rem;
-    border: 1px solid #d0d7de;
-    border-radius: 999px;
-    background: #fff;
-    color: #57606a;
-    cursor: pointer;
-  }
-  .datasette-acl-share-dialog__tab.is-active {
-    background: #1f6feb;
-    border-color: #1f6feb;
-    color: #fff;
-  }
+  /* --- inline add-row ---------------------------------------------------- */
+  /* The last row of the roster table: a "+" glyph in the avatar column, the
+     pills+input field in the identity column, and [role ▾][Add] in the
+     controls column — same flex shape as __row so it reads as the next row. */
   .datasette-acl-share-dialog__add-row {
     display: flex;
-    gap: 0.375rem;
     align-items: center;
+    gap: 0.625rem;
+    padding: 0.5rem 0;
+    border-top: 1px solid #f0f1f2;
+  }
+  .datasette-acl-share-dialog__add-icon {
+    flex: 0 0 auto;
+    width: 2rem;
+    height: 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: #eef1f4;
+    color: #57606a;
+    font-size: 1rem;
   }
   /* Anchor for the floating results overlay. */
   .datasette-acl-share-dialog__search-wrap {
@@ -1481,14 +1458,33 @@
     flex: 1 1 auto;
     min-width: 0;
   }
-  .datasette-acl-share-dialog__search {
-    width: 100%;
-    min-width: 0;
+  /* The bordered box that visually contains the pills + the text input. */
+  .datasette-acl-share-dialog__field {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.3125rem;
     box-sizing: border-box;
-    font-size: 0.875rem;
-    padding: 0.375rem 0.5rem;
+    min-height: 2.25rem;
+    padding: 0.25rem 0.375rem;
+    background: #fff;
     border: 1px solid #d0d7de;
     border-radius: 6px;
+  }
+  .datasette-acl-share-dialog__field:focus-within {
+    border-color: #1f6feb;
+    box-shadow: 0 0 0 1px #1f6feb;
+  }
+  .datasette-acl-share-dialog__search {
+    flex: 1 1 6rem;
+    min-width: 6rem;
+    box-sizing: border-box;
+    font-size: 0.875rem;
+    padding: 0.1875rem 0.125rem;
+    border: none;
+    outline: none;
+    background: transparent;
+    color: inherit;
   }
   .datasette-acl-share-dialog__share-btn {
     font-size: 0.8125rem;
@@ -1504,15 +1500,7 @@
     opacity: 0.5;
     cursor: default;
   }
-  /* --- selected pills ---------------------------------------------------- */
-  .datasette-acl-share-dialog__pills {
-    list-style: none;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-    margin: 0.5rem 0 0;
-    padding: 0;
-  }
+  /* --- staged pills (inline in the add-row field) ------------------------ */
   .datasette-acl-share-dialog__pill {
     display: inline-flex;
     align-items: center;
@@ -1563,15 +1551,17 @@
   }
 
   /* --- floating results overlay ------------------------------------------ */
-  /* The results render as an absolutely-positioned autocomplete dropdown that
-     floats over the rest of the dialog, so adding results never reflows the
-     People-with-access / General-access sections below. */
+  /* The results render as an absolutely-positioned autocomplete dropdown.
+     Because the add-row is the LAST row of the roster, the overlay opens
+     *upward* (bottom: 100%) over the roster rows above it — staying inside the
+     dialog instead of hanging off its bottom edge — and floats over that
+     content so showing results never reflows the dialog. */
   .datasette-acl-share-dialog__results {
     list-style: none;
     margin: 0;
     padding: 0.25rem;
     position: absolute;
-    top: calc(100% + 0.25rem);
+    bottom: calc(100% + 0.25rem);
     left: 0;
     right: 0;
     z-index: 50;
@@ -1618,6 +1608,19 @@
     color: #57606a;
     font-size: 0.8125rem;
     padding: 0.5rem 0.25rem;
+  }
+  /* "People" / "Groups" subheaders inside the unified results dropdown. */
+  .datasette-acl-share-dialog__result-group {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #57606a;
+    padding: 0.375rem 0.5rem 0.125rem;
+  }
+  .datasette-acl-share-dialog__result-group:not(:first-child) {
+    margin-top: 0.125rem;
+    border-top: 1px solid #f0f1f2;
   }
 
   /* --- duplicate-add flash ---------------------------------------------- */

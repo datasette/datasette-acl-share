@@ -14,6 +14,9 @@ dist
 build
 node_modules/
 
+# vitest browser-mode failure screenshots (debug artifacts, not committed)
+frontend/src/__screenshots__/
+
 # Built frontend assets — built from source (matches sibling plugins, which
 # gitignore their build output). Run `just frontend` to regenerate.
 datasette_acl_share/static/

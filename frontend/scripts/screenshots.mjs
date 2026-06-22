@@ -31,10 +31,12 @@ const CASES = [
   // interactive sub-states, driven against a people-only instance so search has
   // people to surface (anyone already shared is filtered out of results):
   { name: "people-search", type: "project", parent: "apollo", actor: "clark", search: "j" },
-  // a person picked → staged as a pill with role + Share button, BEFORE sharing
+  // a person picked → staged as a pill with role + Add button, BEFORE sharing
   { name: "people-selected", type: "project", parent: "apollo", actor: "clark", search: "j", pick: true },
-  // groups picker tab — needs an instance whose features include groups
-  { name: "groups-tab", type: "channel", parent: "newsroom-chat", actor: "clark", tab: "Groups" },
+  // unified picker: one search surfacing both People and Groups (channel has
+  // the groups feature; "p" matches Alfred Pennyworth + the daily-planet group,
+  // one row each so both sub-sections fit inside the dialog box).
+  { name: "search-unified", type: "channel", parent: "newsroom-chat", actor: "clark", search: "p", waitFor: ".datasette-acl-share-dialog__result >> text=Alfred Pennyworth" },
 ];
 
 // Every instance on the page renders its own <dialog>; only the one we opened
@@ -66,20 +68,25 @@ for (const c of cases) {
   await page.click(`${el} .datasette-acl-share__trigger`);
   await page.waitForSelector(`${DIALOG} .datasette-acl-share-dialog__list`);
 
-  if (c.tab) {
-    await page.click(`.datasette-acl-share-dialog__tab >> text=${c.tab}`);
-  }
   if (c.search) {
     await page.fill(".datasette-acl-share-dialog__search", c.search);
     // Wait for a real result row, not the (immediate) empty-state container —
     // the search is debounced + async.
     await page.waitForSelector(".datasette-acl-share-dialog__result");
+    // Groups filter synchronously but people search is debounced/async, so a
+    // unified shot can fire before the people rows land. `waitFor` lets a case
+    // block until a known late-arriving row is present.
+    if (c.waitFor) await page.waitForSelector(c.waitFor);
   }
   if (c.pick) {
     // Click the first result to stage that person as a removable pill, then
-    // wait for the pill (with its role <select> + Share button) to render.
+    // wait for the pill (with its role <select> + Add button) to render.
     await page.click(".datasette-acl-share-dialog__result");
     await page.waitForSelector(".datasette-acl-share-dialog__pill");
+    // Dismiss the (still-open) results dropdown so the shot cleanly shows the
+    // staged pill + role + Add — the "selected, before confirming" state.
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("#datasette-acl-share-results", { state: "detached" });
   }
 
   const file = resolve(OUT, `${c.name}.png`);
