@@ -34,7 +34,7 @@ reset to the demo set on restart.
 
 Each type's specs live in the ``sample_resource_specs`` package (one module per
 type) — add a module there to add a resource type; no change here is needed.
-Each spec is a dict:
+Each spec is a typed ``ResourceSpec`` (see ``sample_resource_specs/_models.py``):
 
   type        acl resource_type name (and Resource.name).
   label       human heading for the gallery section.
@@ -42,12 +42,13 @@ Each spec is a dict:
   blurb       one line on what's *special* about this registry's permissions.
   features  the dialog's `features` attribute (which sections to show), or
             None to show everything.
-  actions   [(action_name, description)] — registered via register_actions.
-  roles     [(name, [actions], rank, manage, description)] — the registry.
-            A "standard" key instead means: build it with standard_roles().
-  instances [{id, title, blurb, grants}] — backfilled into the table. grants is
-            [{role + one of actor|group|public}], seeded so the resource opens
-            onto a realistic roster.
+  actions   [ActionDef(name, description)] — registered via register_actions.
+  roles     [RoleDef(name, actions, rank, manage, description)] — the registry.
+            A ``standard=StandardRoles(...)`` instead means: build it with
+            standard_roles().
+  instances [Instance(id, title, blurb, grants)] — backfilled into the table.
+            grants is [Grant(role + one of actor|group|public)], seeded so the
+            resource opens onto a realistic roster.
 
 Log in as **Clark** via the debug bar — he manages at least one instance of
 every type — to drive the whole gallery.
@@ -75,7 +76,7 @@ from datasette_acl_share import datasette_share_assets
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from sample_resource_specs import RESOURCE_SPECS  # noqa: E402
 
-_SPECS_BY_TYPE = {spec["type"]: spec for spec in RESOURCE_SPECS}
+_SPECS_BY_TYPE = {spec.type: spec for spec in RESOURCE_SPECS}
 _INSTANCES_TABLE = "sample_resource_instances"
 
 
@@ -89,7 +90,7 @@ def _make_resource_class(spec):
     exactly where the editable instances table lives — so adding/removing a row
     there immediately changes which resources of this type exist.
     """
-    resource_type = spec["type"]
+    resource_type = spec.type
 
     class _SampleResource(Resource):
         name = resource_type
@@ -107,25 +108,26 @@ def _make_resource_class(spec):
     return _SampleResource
 
 
-_RESOURCE_CLASSES = {spec["type"]: _make_resource_class(spec) for spec in RESOURCE_SPECS}
+_RESOURCE_CLASSES = {spec.type: _make_resource_class(spec) for spec in RESOURCE_SPECS}
 
 
 def _roles_for_spec(spec):
     """Resolve a spec to a list of AclRole, using standard_roles() when asked."""
     from datasette_acl.roles import AclRole, standard_roles
 
-    if "standard" in spec:
-        return standard_roles(spec["type"], **spec["standard"])
+    if spec.standard is not None:
+        s = spec.standard
+        return standard_roles(spec.type, view=s.view, edit=s.edit, manage=s.manage)
     return [
         AclRole(
-            resource_type=spec["type"],
-            name=name,
-            actions=actions,
-            rank=rank,
-            manage=manage,
-            description=description,
+            resource_type=spec.type,
+            name=r.name,
+            actions=r.actions,
+            rank=r.rank,
+            manage=r.manage,
+            description=r.description,
         )
-        for (name, actions, rank, manage, description) in spec["roles"]
+        for r in spec.roles
     ]
 
 
@@ -143,12 +145,12 @@ def _top_manage_role(spec):
 def register_actions(datasette):
     return [
         Action(
-            name=name,
-            description=description,
-            resource_class=_RESOURCE_CLASSES[spec["type"]],
+            name=action.name,
+            description=action.description,
+            resource_class=_RESOURCE_CLASSES[spec.type],
         )
         for spec in RESOURCE_SPECS
-        for (name, description) in spec["actions"]
+        for action in spec.actions
     ]
 
 
@@ -176,11 +178,11 @@ async def _ensure_instances(datasette):
         )"""
     )
     for spec in RESOURCE_SPECS:
-        for inst in spec["instances"]:
+        for inst in spec.instances:
             await db.execute_write(
                 f"INSERT OR IGNORE INTO {_INSTANCES_TABLE} (type, id, title, blurb) "
                 "VALUES (?, ?, ?, ?)",
-                [spec["type"], inst["id"], inst["title"], inst.get("blurb", "")],
+                [spec.type, inst.id, inst.title, inst.blurb],
             )
 
 
@@ -213,20 +215,20 @@ async def _ensure_seed_grants(datasette):
 
     db = datasette.get_internal_database()
     for spec in RESOURCE_SPECS:
-        for instance in spec["instances"]:
-            for share in instance["grants"]:
-                if "group" in share:
-                    principal = Principal.group(await _resolve_group_id(db, share["group"]))
-                elif "public" in share:
-                    principal = Principal.public(share["public"])
+        for instance in spec.instances:
+            for share in instance.grants:
+                if share.group is not None:
+                    principal = Principal.group(await _resolve_group_id(db, share.group))
+                elif share.public is not None:
+                    principal = Principal.public(share.public)
                 else:
-                    principal = Principal.actor(share["actor"])
+                    principal = Principal.actor(share.actor)
                 await grant(
                     datasette,
-                    spec["type"],
-                    instance["id"],
+                    spec.type,
+                    instance.id,
                     principal=principal,
-                    role=share["role"],
+                    role=share.role,
                     by_actor="sample-resources-seed",
                 )
     datasette._sample_resources_seeded = True
@@ -242,7 +244,7 @@ async def _highest_role_for_actor(datasette, spec, instance_id, actor):
     from datasette_acl.roles import role_for_actions
 
     roles = _roles_for_spec(spec)
-    resource = _RESOURCE_CLASSES[spec["type"]](instance_id)
+    resource = _RESOURCE_CLASSES[spec.type](instance_id)
     granted = set()
     for action in {a for role in roles for a in role.actions}:
         if await datasette.allowed(action=action, resource=resource, actor=actor):
@@ -303,7 +305,7 @@ async def gallery_page(request, datasette):
         rows = await db.execute(
             f"SELECT id, title, blurb FROM {_INSTANCES_TABLE} "
             "WHERE type = ? ORDER BY rowid",
-            [spec["type"]],
+            [spec.type],
         )
         instances = []
         for row in rows.rows:
@@ -316,16 +318,16 @@ async def gallery_page(request, datasette):
                         datasette, spec, row["id"], request.actor
                     ),
                     "can_manage": await can_manage(
-                        datasette, request.actor, spec["type"], row["id"]
+                        datasette, request.actor, spec.type, row["id"]
                     ),
                 }
             )
         sections.append(
             {
-                "type": spec["type"],
-                "label": spec["label"],
-                "description": spec["description"],
-                "features": spec["features"],
+                "type": spec.type,
+                "label": spec.label,
+                "description": spec.description,
+                "features": spec.features,
                 "instances": instances,
             }
         )
@@ -338,7 +340,7 @@ async def gallery_page(request, datasette):
                 "actor_json": actor_json,
                 "actor_id": actor.get("id", ""),
                 "types": [
-                    {"type": s["type"], "label": s["label"]} for s in RESOURCE_SPECS
+                    {"type": s.type, "label": s.label} for s in RESOURCE_SPECS
                 ],
             },
             request=request,

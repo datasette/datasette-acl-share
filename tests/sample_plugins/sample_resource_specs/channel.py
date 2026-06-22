@@ -6,88 +6,96 @@ present, so removing one is allowed), owner-first ordering and a deep role
 dropdown. People + groups + public.
 """
 
-SPEC = {
-    "type": "channel",
-    "label": "Channel",
-    "description": (
+from ._models import ActionDef, Grant, Instance, ResourceSpec, RoleDef
+
+SPEC = ResourceSpec(
+    type="channel",
+    label="Channel",
+    description=(
         "A team chat channel — an ongoing conversation with guests, members, "
         "editors, moderators and an owner."
     ),
-    "blurb": (
+    blurb=(
         "The maximal/odd one: five cumulative tiers with TWO manage-capable "
         "roles (Moderator and Owner). Exercises last-manager counting, "
         "owner-first ordering and a deep role dropdown."
     ),
-    "features": None,
-    "actions": [
-        ("channel-view", "View a channel"),
-        ("channel-post", "Post in a channel"),
-        ("channel-edit", "Edit others' posts in a channel"),
-        ("channel-moderate", "Moderate a channel (manage sharing)"),
-        ("channel-admin", "Administer a channel (manage sharing)"),
+    features=None,
+    actions=[
+        ActionDef(name="channel-view", description="View a channel"),
+        ActionDef(name="channel-post", description="Post in a channel"),
+        ActionDef(name="channel-edit", description="Edit others' posts in a channel"),
+        ActionDef(name="channel-moderate", description="Moderate a channel (manage sharing)"),
+        ActionDef(name="channel-admin", description="Administer a channel (manage sharing)"),
     ],
-    "roles": [
-        ("Guest", ["channel-view"], 1, False, "Can read"),
-        ("Member", ["channel-view", "channel-post"], 2, False, "Can read and post"),
-        (
-            "Editor",
-            ["channel-view", "channel-post", "channel-edit"],
-            3,
-            False,
-            "Can read, post and edit others' posts",
+    roles=[
+        RoleDef(name="Guest", actions=["channel-view"], rank=1, manage=False, description="Can read"),
+        RoleDef(
+            name="Member",
+            actions=["channel-view", "channel-post"],
+            rank=2,
+            manage=False,
+            description="Can read and post",
         ),
-        (
-            "Moderator",
-            ["channel-view", "channel-post", "channel-edit", "channel-moderate"],
-            4,
-            True,
-            "Can moderate and manage sharing",
+        RoleDef(
+            name="Editor",
+            actions=["channel-view", "channel-post", "channel-edit"],
+            rank=3,
+            manage=False,
+            description="Can read, post and edit others' posts",
         ),
-        (
-            "Owner",
-            [
+        RoleDef(
+            name="Moderator",
+            actions=["channel-view", "channel-post", "channel-edit", "channel-moderate"],
+            rank=4,
+            manage=True,
+            description="Can moderate and manage sharing",
+        ),
+        RoleDef(
+            name="Owner",
+            actions=[
                 "channel-view",
                 "channel-post",
                 "channel-edit",
                 "channel-moderate",
                 "channel-admin",
             ],
-            5,
-            True,
-            "Full control",
+            rank=5,
+            manage=True,
+            description="Full control",
         ),
     ],
-    "instances": [
-        {
-            "id": "newsroom-chat",
-            "title": "#newsroom",
-            "blurb": "Two managers — Clark (Owner) + Lois (Moderator); orphan guard lets either go",
-            "grants": [
-                {"actor": "clark", "role": "Owner"},
-                {"actor": "lois", "role": "Moderator"},
-                {"actor": "jimmy", "role": "Member"},
-                {"group": "gotham-gazette", "role": "Guest"},
+    instances=[
+        Instance(
+            id="newsroom-chat",
+            title="#newsroom",
+            blurb="Two managers — Clark (Owner) + Lois (Moderator); orphan guard lets either go",
+            grants=[
+                Grant(actor="clark", role="Owner"),
+                Grant(actor="lois", role="Moderator"),
+                Grant(actor="jimmy", role="Member"),
+                Grant(group="gotham-gazette", role="Guest"),
             ],
-        },
-        {
-            "id": "gotham-desk",
-            "title": "#gotham-desk",
-            "blurb": "Bruce owns · Alfred moderates · Selina edits · Daily Planet guests",
-            "grants": [
-                {"actor": "bruce", "role": "Owner"},
-                {"actor": "alfred", "role": "Moderator"},
-                {"actor": "selina", "role": "Editor"},
-                {"group": "daily-planet", "role": "Guest"},
+        ),
+        Instance(
+            id="gotham-desk",
+            title="#gotham-desk",
+            blurb="Bruce owns · Alfred moderates · Selina edits · Daily Planet guests",
+            grants=[
+                Grant(actor="bruce", role="Owner"),
+                Grant(actor="alfred", role="Moderator"),
+                Grant(actor="selina", role="Editor"),
+                Grant(group="daily-planet", role="Guest"),
             ],
-        },
-        {
-            "id": "announcements",
-            "title": "#announcements",
-            "blurb": "Single owner (Clark) · everyone guests — orphan guard pins Clark",
-            "grants": [
-                {"actor": "clark", "role": "Owner"},
-                {"public": "everyone", "role": "Guest"},
+        ),
+        Instance(
+            id="announcements",
+            title="#announcements",
+            blurb="Single owner (Clark) · everyone guests — orphan guard pins Clark",
+            grants=[
+                Grant(actor="clark", role="Owner"),
+                Grant(public="everyone", role="Guest"),
             ],
-        },
+        ),
     ],
-}
+)
