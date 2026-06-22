@@ -47,15 +47,25 @@
   .acl-role--none { background: #f6f8fa; color: #8a949e; }
 
   .acl-inst__admin { margin-top: 0.35rem; font-size: 0.85em; }
-  .acl-inst__admin summary { color: #57606a; cursor: pointer; display: inline; }
   .acl-inst__admin form.inline { display: inline; }
-  .acl-edit form { margin: 0.4rem 0 0.2rem; display: grid; gap: 0.35rem; max-width: 28rem; }
-  .acl-edit input[type=text] { padding: 0.3em 0.5em; width: 100%; box-sizing: border-box; }
   .acl-linkbtn {
     background: none; border: none; padding: 0; color: #b42318;
     cursor: pointer; font: inherit; text-decoration: underline;
   }
+  .acl-linkbtn--muted { color: #57606a; }
   .acl-dot { color: #d0d7de; margin: 0 0.15rem; }
+
+  dialog.acl-edit-dialog {
+    border: 1px solid #d0d7de; border-radius: 10px; padding: 1.25rem;
+    width: min(28rem, 92vw); box-shadow: 0 8px 30px rgba(0,0,0,0.18);
+  }
+  dialog.acl-edit-dialog::backdrop { background: rgba(0,0,0,0.35); }
+  dialog.acl-edit-dialog h3 { margin: 0 0 0.8rem; font-size: 1.05rem; }
+  dialog.acl-edit-dialog form { display: grid; gap: 0.6rem; }
+  dialog.acl-edit-dialog label { display: grid; gap: 0.2rem; font-size: 0.85em; color: #57606a; }
+  dialog.acl-edit-dialog input[type=text] { padding: 0.4em 0.55em; font-size: 1rem; }
+  .acl-edit-dialog__actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.4rem; }
+  .acl-btn--primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
 
   .acl-create {
     margin-top: 2.5rem; padding-top: 1.25rem; border-top: 2px solid #eaecef;
@@ -109,17 +119,26 @@
 
     {% if inst.can_manage %}
     <div class="acl-inst__admin">
-      <details class="acl-edit">
-        <summary>Edit</summary>
+      <button type="button" class="acl-linkbtn acl-linkbtn--muted"
+              onclick="this.closest('.acl-inst__admin').querySelector('dialog.acl-edit-dialog').showModal()">Edit</button>
+      <dialog class="acl-edit-dialog">
         <form method="post" action="{{ urls.path('/sample-resources/edit') }}">
+          <h3>Edit resource</h3>
           <input type="hidden" name="csrftoken" value="{{ csrftoken() }}">
           <input type="hidden" name="type" value="{{ section.type }}">
           <input type="hidden" name="id" value="{{ inst.id }}">
-          <input type="text" name="title" value="{{ inst.title }}" placeholder="Title">
-          <input type="text" name="blurb" value="{{ inst.blurb }}" placeholder="Short blurb">
-          <button class="acl-btn" type="submit">Save</button>
+          <label>Title
+            <input type="text" name="title" value="{{ inst.title }}" placeholder="Title" required>
+          </label>
+          <label>Blurb
+            <input type="text" name="blurb" value="{{ inst.blurb }}" placeholder="Short blurb">
+          </label>
+          <div class="acl-edit-dialog__actions">
+            <button type="button" class="acl-btn" onclick="this.closest('dialog').close()">Cancel</button>
+            <button type="submit" class="acl-btn acl-btn--primary">Save</button>
+          </div>
         </form>
-      </details>
+      </dialog>
       <span class="acl-dot">·</span>
       <form class="inline" method="post" action="{{ urls.path('/sample-resources/delete') }}"
             onsubmit="return confirm('Delete “{{ inst.title }}”? This removes its grants too.')">
