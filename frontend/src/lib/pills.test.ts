@@ -3,6 +3,7 @@ import {
   addPill,
   batchGrantRequests,
   blockingGrant,
+  enrichGrantFromPill,
   hasPill,
   pillFromActor,
   pillFromGroup,
@@ -44,6 +45,7 @@ describe("pillFromActor", () => {
       id: "carol",
       label: "Carol Smith",
       kind: "user",
+      display_name: "Carol Smith",
       avatar_url: "/pic/carol",
       email: "c@x.com",
     });
@@ -54,6 +56,72 @@ describe("pillFromActor", () => {
       "x@y.com",
     );
     expect(pillFromActor({ id: "x", kind: "user" }).label).toBe("x");
+  });
+
+  it("carries display_name separately from the label", () => {
+    // display_name is only set when a real name is present (not email/id).
+    expect(
+      pillFromActor({ id: "carol", display_name: "Carol Smith", kind: "user" })
+        .display_name,
+    ).toBe("Carol Smith");
+    expect(
+      pillFromActor({ id: "x", email: "x@y.com", kind: "user" }).display_name,
+    ).toBeUndefined();
+    expect(
+      pillFromActor({ id: "x", display_name: "  ", kind: "user" }).display_name,
+    ).toBeUndefined();
+  });
+});
+
+describe("enrichGrantFromPill", () => {
+  const bareGrant = grant({ principal: "actor", id: "carol", role: "Editor" });
+
+  it("fills in the picker's name/email/avatar on a bare grant row", () => {
+    const pill: Pill = {
+      principal: "actor",
+      id: "carol",
+      label: "Carol Smith",
+      kind: "user",
+      display_name: "Carol Smith",
+      email: "c@x.com",
+      avatar_url: "/pic/carol",
+    };
+    expect(enrichGrantFromPill(bareGrant, pill)).toEqual({
+      ...bareGrant,
+      display_name: "Carol Smith",
+      email: "c@x.com",
+      avatar_url: "/pic/carol",
+    });
+  });
+
+  it("never sets display_name from an email/id-only pill", () => {
+    const pill = pillFromActor({ id: "x", email: "x@y.com", kind: "user" });
+    const enriched = enrichGrantFromPill(
+      grant({ principal: "actor", id: "x" }),
+      pill,
+    );
+    expect(enriched.display_name).toBeUndefined();
+    expect(enriched.email).toBe("x@y.com");
+  });
+
+  it("keeps the server's values when it already enriched the row", () => {
+    const serverEnriched = grant({
+      principal: "actor",
+      id: "carol",
+      display_name: "Server Name",
+      email: "server@x.com",
+    });
+    const pill: Pill = {
+      principal: "actor",
+      id: "carol",
+      label: "Carol Smith",
+      kind: "user",
+      display_name: "Carol Smith",
+      email: "c@x.com",
+    };
+    const enriched = enrichGrantFromPill(serverEnriched, pill);
+    expect(enriched.display_name).toBe("Server Name");
+    expect(enriched.email).toBe("server@x.com");
   });
 });
 

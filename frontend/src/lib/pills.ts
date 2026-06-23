@@ -24,6 +24,10 @@ export interface Pill {
   label: string;
   /** Principal kind, for the avatar badge (user / group). */
   kind: ActorKind;
+  /** The resolved display name (people only); kept separate from {@link label}
+   * (which falls back to email/id) so a freshly-granted row can be enriched
+   * onto its grant without mistaking an email/id for a real name. */
+  display_name?: string;
   /** Optional avatar image url (people only). */
   avatar_url?: string;
   /** Optional sub-label (a person's email), shown in the results dropdown. */
@@ -44,6 +48,7 @@ export function pillFromActor(actor: Actor): Pill {
     id: actor.id,
     label: actorLabel(actor),
     kind: actor.kind,
+    ...(actor.display_name?.trim() ? { display_name: actor.display_name } : {}),
     ...(actor.avatar_url ? { avatar_url: actor.avatar_url } : {}),
     ...(actor.email ? { email: actor.email } : {}),
   };
@@ -103,6 +108,31 @@ export function pillPrincipal(pill: Pill): Principal {
  */
 export function batchGrantRequests(pills: Pill[], role: string): GrantRequest[] {
   return pills.map((pill) => ({ ...pillPrincipal(pill), role }));
+}
+
+/**
+ * Merge a pill's display enrichment (the name/email/avatar the user just saw in
+ * the picker) onto the bare grant row the server returns. acl's grant endpoint
+ * echoes actor grants as bare ids — no profile fields — so without this a
+ * freshly-added row shows the raw id until a full reload re-runs roster
+ * enrichment. The server's own values win when present (forward-compat with an
+ * acl that does enrich); the pill only fills the gaps.
+ */
+export function enrichGrantFromPill(grant: Grant, pill: Pill): Grant {
+  return {
+    ...grant,
+    ...(grant.display_name?.trim()
+      ? {}
+      : pill.display_name?.trim()
+        ? { display_name: pill.display_name }
+        : {}),
+    ...(grant.email?.trim() ? {} : pill.email ? { email: pill.email } : {}),
+    ...(grant.avatar_url
+      ? {}
+      : pill.avatar_url
+        ? { avatar_url: pill.avatar_url }
+        : {}),
+  };
 }
 
 /**

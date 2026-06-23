@@ -41,6 +41,7 @@
     addPill,
     batchGrantRequests,
     blockingGrant,
+    enrichGrantFromPill,
     hasPill,
     pillFromActor,
     pillFromGroup,
@@ -694,7 +695,10 @@
           child ?? null,
           requests[i]!,
         );
-        granted.push(grant);
+        // acl echoes actor grants as bare ids; carry the picker's display
+        // name/email/avatar onto the row so it shows correctly without waiting
+        // for a full reload to re-run roster enrichment.
+        granted.push(enrichGrantFromPill(grant, pill));
         dispatch("share-granted", {
           principal: grant.principal,
           id: grant.id,
