@@ -191,11 +191,22 @@
       share = await api.getResource(rt, p, c);
       await enrichRoster();
     } catch (err) {
-      loadError = errorMessage(err, "Failed to load sharing");
+      loadError = loadErrorMessage(err);
       share = null;
     } finally {
       loading = false;
     }
+  }
+
+  /** Friendly message for a failed initial load. acl's read endpoint is
+   * manager-only (v1), so a 403 here isn't a generic failure — it means the
+   * actor can use the resource but isn't allowed to manage who it's shared
+   * with. Say that plainly instead of leaking the raw "Request failed (403)". */
+  function loadErrorMessage(err: unknown): string {
+    if (err instanceof ShareApiError && err.status === 403) {
+      return "You don't have permission to manage sharing for this. Ask someone who manages it to change who has access.";
+    }
+    return errorMessage(err, "Failed to load sharing");
   }
 
   /** acl's read endpoint returns actor grants as bare ids (it enriches via the

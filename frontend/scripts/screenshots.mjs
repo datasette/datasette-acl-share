@@ -37,6 +37,12 @@ const CASES = [
   // the groups feature; "p" matches Alfred Pennyworth + the daily-planet group,
   // one row each so both sub-sections fit inside the dialog box).
   { name: "search-unified", type: "channel", parent: "newsroom-chat", actor: "clark", search: "p", waitFor: ".datasette-acl-share-dialog__result >> text=Alfred Pennyworth" },
+  // load-error state: a non-manager opening the dialog. acl's read endpoint is
+  // manager-only, so the resource fetch 403s and the dialog shows the friendly
+  // "you don't have permission to manage sharing" message instead of the raw
+  // "Request failed (403)". The demo disables the trigger for non-managers, so
+  // this case injects an enabled dialog (see `inject` handling below).
+  { name: "no-access", type: "playlist", parent: "summer-mix", actor: "selina", inject: true },
 ];
 
 // Every instance on the page renders its own <dialog>; only the one we opened
@@ -64,6 +70,27 @@ for (const c of cases) {
   ]);
   const page = await ctx.newPage();
   await page.goto(`${BASE}/sample-resources`);
+
+  if (c.inject) {
+    // The demo disables the trigger for non-managers, so to capture the
+    // load-error state we drop a fresh, enabled, auto-opening dialog onto the
+    // page pointed at a resource this actor can't manage. Its read fetch 403s
+    // and the dialog renders the friendly permission message.
+    await page.evaluate(({ type, parent }) => {
+      const dialog = document.createElement("datasette-acl-share-dialog");
+      dialog.setAttribute("resource-type", type);
+      dialog.setAttribute("parent", parent);
+      dialog.setAttribute("open", "");
+      document.body.appendChild(dialog);
+    }, { type: c.type, parent: c.parent });
+    await page.waitForSelector(`${DIALOG} .datasette-acl-share-dialog__error`);
+    const file = resolve(OUT, `${c.name}.png`);
+    await page.locator(DIALOG).screenshot({ path: file });
+    console.log(`✓ ${c.name} → ${file}`);
+    await ctx.close();
+    continue;
+  }
+
   const el = `datasette-acl-share-dialog[resource-type="${c.type}"][parent="${c.parent}"]`;
   await page.click(`${el} .datasette-acl-share__trigger`);
   await page.waitForSelector(`${DIALOG} .datasette-acl-share-dialog__list`);
