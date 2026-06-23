@@ -74,9 +74,22 @@ sorted list of removed action names (`{"ok", "removed": [...]}`).
 every grant targets exactly one of an **actor** (`actor_id`, `principal_type:
 "actor"`), a **group** (`group_id`), or a **public audience** named purely by
 `principal_type` with *no id* — `everyone` (anyone, incl. anonymous),
-`authenticated` (any signed-in actor), or `anonymous` (signed-out only). The
-dialog offers `everyone` / `authenticated` in its General-access control. The
-GET response renders an audience as `principal: "public"`, `id: "<audience>"`,
+`authenticated` (any signed-in actor), or `anonymous` (signed-out only).
+
+The **General access** section renders **one row per present public audience**,
+each with its own role `<select>` + remove — acl models the three audiences as
+independent principals, so a resource can be e.g. Editor for `authenticated` and
+Viewer for `anonymous` at once. Role changes apply instantly via the **atomic
+`update`** (NOT additive `grant` — a `grant` can't *remove* actions, so an
+Editor→Viewer downgrade would silently stick at Editor; this was the original
+bug). Removes use `revoke`. The add-row offers only the two **non-overlapping**
+audiences (`authenticated`, `anonymous`); `everyone` overlaps both so it's never
+offered as a *new* choice, but a pre-existing `everyone` grant still renders as a
+removable row. Adding takes a one-step inline **confirm** (publishing publicly is
+the one risky action); role-change/remove don't. `helpers: publicGrants` /
+`availableAudiencesToAdd` / `defaultPublicRole` in `lib/grants.ts`.
+
+The GET response renders an audience as `principal: "public"`, `id: "<audience>"`,
 `kind: "public"`; `isWildcardGrant` matches on `kind` only, never the raw id,
 so a real actor whose id happens to match an audience name stays in the People
 roster. Mutations send the audience as `{"principal_type": "<audience>"}`.
@@ -195,6 +208,11 @@ actor (lois, jimmy) inherits it. Try a single-manager instance (project
   `authenticated` / `anonymous`; wildcard ids retired): mutations send the
   audience as `principal_type` with no id, demo seeding builds `Principal`
   objects, and general-access detection is kind-only.
+- **General access is multi-audience**: one row per public audience with its own
+  role (instant-apply, `update` for role changes — fixes the downgrade bug),
+  remove via `revoke`, and an add-row (the two non-overlapping audiences only,
+  behind a confirm). No new acl API needed — `update` already accepts audience
+  principals and the read endpoint returns each audience as its own grant.
 - All suites green: frontend check (0 errors), vitest, pytest.
 
 ## What's left / deferred

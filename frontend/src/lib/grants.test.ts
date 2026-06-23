@@ -1,14 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
-  currentWildcardGrant,
+  ADDABLE_AUDIENCES,
+  audienceLabel,
+  availableAudiencesToAdd,
   defaultPickerRole,
-  GENERAL_ACCESS_PRINCIPALS,
+  defaultPublicRole,
   generalAccessRoles,
   isLastManageGrant,
   isManageGrant,
   isOwnerGrant,
   isWildcardGrant,
   orderGrants,
+  publicGrants,
+  PUBLIC_AUDIENCES,
   selectableRoles,
 } from "./grants";
 import type { Grant, Role } from "./types";
@@ -133,8 +137,11 @@ describe("orderGrants", () => {
 });
 
 describe("general-access helpers", () => {
-  it("offers BOTH public audiences (everyone and authenticated)", () => {
-    expect(GENERAL_ACCESS_PRINCIPALS).toEqual(["everyone", "authenticated"]);
+  it("knows all three audiences but only offers the two disjoint ones to add", () => {
+    expect(PUBLIC_AUDIENCES).toEqual(["everyone", "authenticated", "anonymous"]);
+    // `everyone` overlaps the other two, so it is never offered as a NEW choice.
+    expect(ADDABLE_AUDIENCES).toEqual(["authenticated", "anonymous"]);
+    expect(ADDABLE_AUDIENCES).not.toContain("everyone");
   });
 
   it("isWildcardGrant matches on public kind only", () => {
@@ -146,13 +153,41 @@ describe("general-access helpers", () => {
     expect(isWildcardGrant(grant({ id: "alice", kind: "user" }))).toBe(false);
   });
 
-  it("currentWildcardGrant returns the public grant or null", () => {
+  it("publicGrants returns every public grant, most-permissive first", () => {
     const grants: Grant[] = [
+      grant({ id: "anonymous", role: "Viewer", kind: "public" }),
       grant({ id: "alice", role: "Editor", kind: "user" }),
-      grant({ id: "authenticated", role: "Viewer", kind: "public" }),
+      grant({ id: "everyone", role: "Viewer", kind: "public" }),
+      grant({ id: "authenticated", role: "Editor", kind: "public" }),
     ];
-    expect(currentWildcardGrant(grants)?.id).toBe("authenticated");
-    expect(currentWildcardGrant([grant({ id: "bob", kind: "user" })])).toBeNull();
+    expect(publicGrants(grants).map((g) => g.id)).toEqual([
+      "everyone",
+      "authenticated",
+      "anonymous",
+    ]);
+    expect(publicGrants([grant({ id: "bob", kind: "user" })])).toEqual([]);
+  });
+
+  it("availableAudiencesToAdd excludes everyone AND already-present audiences", () => {
+    // Nothing present yet → both disjoint audiences offered.
+    expect(availableAudiencesToAdd([])).toEqual(["authenticated", "anonymous"]);
+    // authenticated already granted → only anonymous remains.
+    expect(
+      availableAudiencesToAdd([
+        grant({ id: "authenticated", role: "Editor", kind: "public" }),
+      ]),
+    ).toEqual(["anonymous"]);
+    // A pre-existing everyone grant doesn't consume an addable slot, but it also
+    // never makes everyone addable.
+    expect(
+      availableAudiencesToAdd([grant({ id: "everyone", role: "Viewer", kind: "public" })]),
+    ).toEqual(["authenticated", "anonymous"]);
+  });
+
+  it("audienceLabel maps each audience to a friendly label", () => {
+    expect(audienceLabel("everyone")).toBe("Anyone");
+    expect(audienceLabel("authenticated")).toBe("Anyone signed in");
+    expect(audienceLabel("anonymous")).toBe("Anyone signed out");
   });
 
   it("generalAccessRoles excludes manage roles and Owner", () => {
@@ -160,6 +195,12 @@ describe("general-access helpers", () => {
       "Viewer",
       "Editor",
     ]);
+  });
+
+  it("defaultPublicRole picks the lowest-rank non-manage role (conservative)", () => {
+    expect(defaultPublicRole(ROLES)).toBe("Viewer");
+    // No selectable (non-manage) role → null.
+    expect(defaultPublicRole([{ name: "Owner", actions: ["*"], rank: 1, manage: true }])).toBeNull();
   });
 });
 

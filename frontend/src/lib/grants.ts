@@ -3,13 +3,39 @@
 
 import type { Grant, Role, PublicAudience } from "./types";
 
-/** The public audiences the dialog's General-access section offers:
- * `everyone` (Anyone, incl. anonymous) and `authenticated` (Anyone signed in).
- * (`anonymous` exists in acl but is not offered as a dialog option.) */
-export const GENERAL_ACCESS_PRINCIPALS: PublicAudience[] = [
+/** All public audiences, in display order (most permissive first). acl models
+ * each as an independent principal with its own action-set, so the General
+ * access section renders one row per present audience, each with its own role. */
+export const PUBLIC_AUDIENCES: PublicAudience[] = [
   "everyone",
   "authenticated",
+  "anonymous",
 ];
+
+/** Audiences offered for *adding* a new general-access row: the two
+ * non-overlapping ones — `authenticated` (signed-in) and `anonymous`
+ * (signed-out). `everyone` is deliberately omitted as a *new* choice because it
+ * overlaps both (a signed-in caller would get the union of grants), which is
+ * confusing to add on purpose; "everyone at Viewer" is expressible as both rows.
+ * A pre-existing `everyone` grant still renders as a removable row (see
+ * {@link publicGrants}), so legacy/seeded data is never hidden. */
+export const ADDABLE_AUDIENCES: PublicAudience[] = ["authenticated", "anonymous"];
+
+/** Human label for a public audience principal_type. */
+export function audienceLabel(audience: string): string {
+  if (audience === "everyone") return "Anyone";
+  if (audience === "authenticated") return "Anyone signed in";
+  if (audience === "anonymous") return "Anyone signed out";
+  return audience;
+}
+
+/** One-line description shown under a public audience's label. */
+export function audienceSublabel(audience: string): string {
+  if (audience === "everyone") return "Anyone on the internet can access";
+  if (audience === "authenticated") return "Anyone signed in can access";
+  if (audience === "anonymous") return "Anyone not signed in can access";
+  return "";
+}
 
 /** True when a grant is a public "General access" audience. The server tags
  * these `principal: "public"` / `kind: "public"`; matching on kind only —
@@ -20,12 +46,35 @@ export function isWildcardGrant(grant: Grant): boolean {
 }
 
 /**
- * The current public audience grant for the resource, if any. Only one is
- * meaningful at a time in the Google-Docs-style control (the most permissive
- * wins), so we return the first `kind:"public"` grant found.
+ * Every public-audience grant on the resource, ordered most-permissive first
+ * (everyone → authenticated → anonymous). Each is rendered as its own row in the
+ * General access section and mutated independently.
  */
-export function currentWildcardGrant(grants: Grant[]): Grant | null {
-  return grants.find(isWildcardGrant) ?? null;
+export function publicGrants(grants: Grant[]): Grant[] {
+  const order = new Map(PUBLIC_AUDIENCES.map((a, i) => [a as string, i]));
+  return grants
+    .filter(isWildcardGrant)
+    .sort((a, b) => (order.get(a.id) ?? 99) - (order.get(b.id) ?? 99));
+}
+
+/**
+ * Which public audiences can still be added: the {@link ADDABLE_AUDIENCES}
+ * minus any already present on the resource. Drives the "Add public access"
+ * control; when empty the control is hidden.
+ */
+export function availableAudiencesToAdd(grants: Grant[]): PublicAudience[] {
+  const present = new Set(grants.filter(isWildcardGrant).map((g) => g.id));
+  return ADDABLE_AUDIENCES.filter((a) => !present.has(a));
+}
+
+/**
+ * A conservative default role for newly added public access: the lowest-rank
+ * non-manage role (typically "Viewer"). Unlike {@link defaultPickerRole} (which
+ * favours a write role for the people add-box), exposing a resource publicly
+ * should default to the least-privileged role.
+ */
+export function defaultPublicRole(roles: Role[]): string | null {
+  return generalAccessRoles(roles)[0]?.name ?? null;
 }
 
 /**

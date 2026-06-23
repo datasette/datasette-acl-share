@@ -11,14 +11,24 @@
 <script lang="ts">
   import { ShareApi, ShareApiError, capabilitiesFromFeatures } from "./lib/api";
   import { avatarColor, initials, kindBadge } from "./lib/avatar";
-  import { ICON_GLOBE, ICON_LOCK, ICON_PEOPLE, ICON_PLUS } from "./lib/icons";
   import {
-    currentWildcardGrant,
+    ICON_GLOBE,
+    ICON_INCOGNITO,
+    ICON_PEOPLE,
+    ICON_PERSON,
+    ICON_PLUS,
+  } from "./lib/icons";
+  import {
+    audienceLabel,
+    audienceSublabel,
+    availableAudiencesToAdd,
     defaultPickerRole,
+    defaultPublicRole,
     generalAccessRoles,
     isLastManageGrant,
     isOwnerGrant,
     orderGrants,
+    publicGrants,
     selectableRoles,
   } from "./lib/grants";
   import { debounce, filterAlreadyGranted, SEARCH_DEBOUNCE_MS } from "./lib/people";
@@ -725,80 +735,137 @@
     return query.trim() ? `No ${what} found` : `Type to search ${what}`;
   }
 
-  // --- general access ------------------------------------------------------
+  // --- general access (public audiences) -----------------------------------
+  //
+  // acl models everyone / authenticated / anonymous as independent principals,
+  // each with its own action-set. So the section renders one row per present
+  // audience — each with its own role <select> + remove — and mutates them
+  // independently and instantly (role change → atomic `update`, remove →
+  // `revoke`), exactly like the people roster. Adding a new audience goes
+  // through a small inline confirm (exposing a resource publicly is the one
+  // risky action), then `grant`.
 
-  // The "Restricted" sentinel for the principal selector (no audience grant).
-  const RESTRICTED = "" as const;
-
-  // Human label for a public audience principal_type.
-  function audienceLabel(audience: string): string {
-    if (audience === "everyone") return "Anyone";
-    if (audience === "authenticated") return "Anyone signed in";
-    if (audience === "anonymous") return "Anyone signed out";
-    return audience;
-  }
-
-  // The current public audience grant (kind:"public"), reflected into controls.
-  let wildcard = $derived(currentWildcardGrant(share?.grants ?? []));
-
-  // Which public audience is currently active ("" = Restricted).
-  let generalPrincipal = $derived<PublicAudience | "">(
-    wildcard ? (wildcard.id as PublicAudience) : RESTRICTED,
-  );
-
-  // The current general-access role (only meaningful when not Restricted).
-  let generalRole = $derived<string>(wildcard?.role ?? "");
-
+  // Every public-audience grant, ordered most-permissive first.
+  let publicRows = $derived(publicGrants(share?.grants ?? []));
+  // Non-manage, non-owner roles offered for any public audience.
   let generalRoles = $derived(generalAccessRoles(share?.roles ?? []));
-  let generalBusy = $state(false);
+
+  // The "Add public access" control: the audiences still addable (the two
+  // non-overlapping ones, minus any already present) and its staged audience +
+  // role. `everyone` is never offered as a *new* choice (it overlaps the other
+  // two); a pre-existing everyone grant still shows as a removable row above.
+  let addableAudiences = $derived(availableAudiencesToAdd(share?.grants ?? []));
+  let addAudience = $state<PublicAudience | "">("");
+  let addRole = $state<string>("");
+  // When true, the inline "Make public?" confirm replaces the add-row.
+  let pendingPublicAdd = $state(false);
+
+  // Per-audience busy flags so one row's mutation doesn't disable the others.
+  let generalBusy = $state<Record<string, boolean>>({});
   let generalError = $state<string | null>(null);
 
-  function generalPrincipalLabel(p: PublicAudience | ""): string {
-    return p === RESTRICTED ? "Restricted" : audienceLabel(p);
-  }
-
-  async function onGeneralPrincipalChange(event: Event) {
-    const value = (event.currentTarget as HTMLSelectElement).value as
-      | PublicAudience
-      | "";
-    if (value === RESTRICTED) {
-      await revokeWildcard();
-      return;
+  // Keep the add-row's staged audience valid as availability changes (a grant
+  // removes an option; a revoke restores one).
+  $effect(() => {
+    if (addAudience === "" || !addableAudiences.includes(addAudience)) {
+      addAudience = addableAudiences[0] ?? "";
+      pendingPublicAdd = false;
     }
-    // Granting a new audience: if switching from another audience, revoke the
-    // old one first so only one general-access row exists.
-    const role = generalRole || defaultPickerRole(share?.roles ?? []) || "";
-    const previous = wildcard;
-    await setWildcard(value, role, previous);
+  });
+  // Default the add-row role to the most conservative (lowest) role, and keep it
+  // valid against the resource's role registry.
+  $effect(() => {
+    if (addRole === "" || !generalRoles.some((r) => r.name === addRole)) {
+      addRole = defaultPublicRole(share?.roles ?? []) ?? "";
+    }
+  });
+
+  /** Icon for a public audience's avatar chip. */
+  function audienceIcon(audience: string): string {
+    if (audience === "authenticated") return ICON_PERSON;
+    if (audience === "anonymous") return ICON_INCOGNITO;
+    return ICON_GLOBE; // everyone
   }
 
-  async function onGeneralRoleChange(event: Event) {
-    const role = (event.currentTarget as HTMLSelectElement).value;
-    const principal = generalPrincipal;
-    if (principal === RESTRICTED || !role) return;
-    await setWildcard(principal, role, null);
+  // Change one audience's role via atomic `update` (swaps the action-set, so a
+  // downgrade actually removes the extra actions — unlike the additive `grant`).
+  async function onPublicRoleChange(grant: Grant, event: Event) {
+    if (!resourceType || !parent) return;
+    const select = event.currentTarget as HTMLSelectElement;
+    const newRole = select.value;
+    const prevRole = grant.role;
+    if (newRole === prevRole) return;
+    const audience = grant.id as PublicAudience;
+    generalBusy = { ...generalBusy, [audience]: true };
+    generalError = null;
+    patchGrant(grant.id, "public", { role: newRole }); // optimistic
+    try {
+      const updated = await api.update(resourceType, parent, child ?? null, {
+        principal_type: audience,
+        role: newRole,
+      });
+      patchGrant(grant.id, "public", updated);
+      dispatch("share-updated", {
+        principal: "public",
+        id: grant.id,
+        role: updated.role,
+      });
+      dispatch("share-changed", {});
+    } catch (err) {
+      patchGrant(grant.id, "public", { role: prevRole });
+      select.value = prevRole ?? "";
+      generalError = errorMessage(err, "Couldn't change general access");
+    } finally {
+      generalBusy = withoutKey(generalBusy, audience);
+    }
   }
 
-  async function setWildcard(
-    principal: PublicAudience,
-    role: string,
-    revokePrevious: Grant | null,
-  ) {
-    if (!resourceType || !parent || !role) return;
-    generalBusy = true;
+  async function onPublicRemove(grant: Grant) {
+    if (!share || !resourceType || !parent) return;
+    const audience = grant.id as PublicAudience;
+    generalBusy = { ...generalBusy, [audience]: true };
+    generalError = null;
+    const previousGrants = share.grants;
+    share.grants = share.grants.filter(
+      (g) => !(g.principal === "public" && g.id === grant.id),
+    );
+    try {
+      await api.revoke(resourceType, parent, child ?? null, {
+        principal_type: audience,
+      });
+      dispatch("share-revoked", { principal: "public", id: grant.id });
+      dispatch("share-changed", {});
+    } catch (err) {
+      if (share) share.grants = previousGrants;
+      generalError = errorMessage(err, "Couldn't change general access");
+    } finally {
+      generalBusy = withoutKey(generalBusy, audience);
+    }
+  }
+
+  // Adding public access is two-step: arm the inline confirm, then commit.
+  function armPublicAdd() {
+    if (!addAudience || !addRole) return;
+    pendingPublicAdd = true;
+  }
+  function cancelPublicAdd() {
+    pendingPublicAdd = false;
+  }
+
+  async function confirmPublicAdd() {
+    if (!share || !resourceType || !parent || !addAudience || !addRole) return;
+    const audience = addAudience;
+    generalBusy = { ...generalBusy, [audience]: true };
     generalError = null;
     try {
-      if (revokePrevious && revokePrevious.id !== principal) {
-        await api.revoke(resourceType, parent, child ?? null, {
-          principal_type: revokePrevious.id as PublicAudience,
-        });
-      }
       const grant = await api.grant(resourceType, parent, child ?? null, {
-        principal_type: principal,
-        role,
+        principal_type: audience,
+        role: addRole,
       });
       if (share) {
-        const without = share.grants.filter((g) => g.kind !== "public");
+        const without = share.grants.filter(
+          (g) => !(g.principal === "public" && g.id === audience),
+        );
         share.grants = [...without, grant];
       }
       dispatch("share-granted", {
@@ -807,32 +874,11 @@
         role: grant.role,
       });
       dispatch("share-changed", {});
+      pendingPublicAdd = false; // the $effect re-seeds addAudience/addRole
     } catch (err) {
       generalError = errorMessage(err, "Couldn't change general access");
     } finally {
-      generalBusy = false;
-    }
-  }
-
-  async function revokeWildcard() {
-    if (!resourceType || !parent) return;
-    const grant = wildcard;
-    if (!grant) return;
-    generalBusy = true;
-    generalError = null;
-    try {
-      await api.revoke(resourceType, parent, child ?? null, {
-        principal_type: grant.id as PublicAudience,
-      });
-      if (share) {
-        share.grants = share.grants.filter((g) => g.kind !== "public");
-      }
-      dispatch("share-revoked", { principal: "public", id: grant.id });
-      dispatch("share-changed", {});
-    } catch (err) {
-      generalError = errorMessage(err, "Couldn't change general access");
-    } finally {
-      generalBusy = false;
+      generalBusy = withoutKey(generalBusy, audience);
     }
   }
 </script>
@@ -1173,69 +1219,135 @@
           <p class="datasette-acl-share-dialog__error" role="alert">{generalError}</p>
         {/if}
 
-        <div class="datasette-acl-share-dialog__general-row">
-          <span
-            class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials"
-            style:background-color={generalPrincipal === RESTRICTED
-              ? "#57606a"
-              : avatarColor(generalPrincipal)}
-            aria-hidden="true"
-          >
-            {#if generalPrincipal === RESTRICTED}{@html ICON_LOCK}{:else}{@html ICON_GLOBE}{/if}
-          </span>
+        {#if publicRows.length === 0}
+          <p class="datasette-acl-share-dialog__general-empty">
+            Restricted — only people with access can open this.
+          </p>
+        {:else}
+          <ul class="datasette-acl-share-dialog__list">
+            {#each publicRows as grant (grant.id)}
+              {@const audience = grant.id}
+              {@const rowBusy = generalBusy[audience] === true}
+              <li
+                class="datasette-acl-share-dialog__row"
+                data-principal-key={`public:${audience}`}
+              >
+                <span class="datasette-acl-share-dialog__avatar-wrap">
+                  <span
+                    class="datasette-acl-share-dialog__avatar datasette-acl-share-dialog__avatar--initials"
+                    style:background-color={avatarColor(audience)}
+                    aria-hidden="true">{@html audienceIcon(audience)}</span
+                  >
+                </span>
 
-          <span class="datasette-acl-share-dialog__general-text">
-            {#if canManage}
+                <span class="datasette-acl-share-dialog__identity">
+                  <span class="datasette-acl-share-dialog__name"
+                    >{audienceLabel(audience)}</span
+                  >
+                  <span class="datasette-acl-share-dialog__sub"
+                    >{audienceSublabel(audience)}</span
+                  >
+                </span>
+
+                <span class="datasette-acl-share-dialog__controls">
+                  {#if canManage}
+                    <select
+                      class="datasette-acl-share-dialog__role-select"
+                      aria-label={`Role for ${audienceLabel(audience)}`}
+                      value={grant.role ?? ""}
+                      disabled={rowBusy}
+                      onchange={(e) => onPublicRoleChange(grant, e)}
+                    >
+                      {#if grant.role && !generalRoles.some((r) => r.name === grant.role)}
+                        <option value={grant.role} disabled>{grant.role}</option>
+                      {/if}
+                      {#each generalRoles as role (role.name)}
+                        <option value={role.name}>{role.name}</option>
+                      {/each}
+                    </select>
+                    <button
+                      type="button"
+                      class="datasette-acl-share-dialog__remove"
+                      aria-label={`Remove ${audienceLabel(audience)}`}
+                      disabled={rowBusy}
+                      onclick={() => onPublicRemove(grant)}
+                    >
+                      ×
+                    </button>
+                  {:else}
+                    <span class="datasette-acl-share-dialog__role-tag"
+                      >{grant.role ?? "Custom"}</span
+                    >
+                  {/if}
+                </span>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+
+        {#if canManage && addableAudiences.length > 0}
+          {#if pendingPublicAdd && addAudience}
+            <!-- Exposing a resource publicly is the one risky action, so it
+                 takes an explicit confirm (role changes/removes apply directly). -->
+            <div class="datasette-acl-share-dialog__general-confirm" role="alert">
+              <span class="datasette-acl-share-dialog__general-confirm-text">
+                Make this visible to <strong>{audienceLabel(addAudience)}</strong>
+                as {addRole}?
+              </span>
+              <button
+                type="button"
+                class="datasette-acl-share-dialog__share-btn"
+                aria-label="Confirm public access"
+                disabled={generalBusy[addAudience] === true}
+                onclick={confirmPublicAdd}
+              >
+                {generalBusy[addAudience] === true ? "Adding…" : "Confirm"}
+              </button>
+              <button
+                type="button"
+                class="datasette-acl-share-dialog__general-cancel"
+                onclick={cancelPublicAdd}
+              >
+                Cancel
+              </button>
+            </div>
+          {:else}
+            <div
+              class="datasette-acl-share-dialog__add-row datasette-acl-share-dialog__general-add"
+            >
+              <span class="datasette-acl-share-dialog__add-icon" aria-hidden="true"
+                >{@html ICON_GLOBE}</span
+              >
               <select
                 class="datasette-acl-share-dialog__general-principal"
-                aria-label="General access"
-                value={generalPrincipal}
-                disabled={generalBusy}
-                onchange={onGeneralPrincipalChange}
+                aria-label="Add public access"
+                bind:value={addAudience}
               >
-                <option value={RESTRICTED}>Restricted</option>
-                <option value="authenticated">Anyone signed in</option>
-                <option value="everyone">Anyone</option>
+                {#each addableAudiences as a (a)}
+                  <option value={a}>{audienceLabel(a)}</option>
+                {/each}
               </select>
-            {:else}
-              <span class="datasette-acl-share-dialog__name"
-                >{generalPrincipalLabel(generalPrincipal)}</span
-              >
-            {/if}
-            <span class="datasette-acl-share-dialog__sub">
-              {#if generalPrincipal === RESTRICTED}
-                Only people with access can open
-              {:else if generalPrincipal === "everyone"}
-                Anyone on the internet can access
-              {:else}
-                Anyone signed in can access
-              {/if}
-            </span>
-          </span>
-
-          {#if generalPrincipal !== RESTRICTED}
-            {#if canManage}
               <select
                 class="datasette-acl-share-dialog__role-select"
-                aria-label="General access role"
-                value={generalRole}
-                disabled={generalBusy}
-                onchange={onGeneralRoleChange}
+                aria-label="Role for public access"
+                bind:value={addRole}
               >
-                {#if generalRole && !generalRoles.some((r) => r.name === generalRole)}
-                  <option value={generalRole} disabled>{generalRole}</option>
-                {/if}
                 {#each generalRoles as role (role.name)}
                   <option value={role.name}>{role.name}</option>
                 {/each}
               </select>
-            {:else}
-              <span class="datasette-acl-share-dialog__role-tag"
-                >{generalRole || "Custom"}</span
+              <button
+                type="button"
+                class="datasette-acl-share-dialog__share-btn"
+                aria-label="Add public access"
+                disabled={!addAudience || !addRole}
+                onclick={armPublicAdd}
               >
-            {/if}
+                Add
+              </button>
+            </div>
           {/if}
-        </div>
+        {/if}
       </section>
     {/if}
   {/if}
@@ -1675,27 +1787,12 @@
   }
 
   /* --- general access ---------------------------------------------------- */
-  .datasette-acl-share-dialog__general-row {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.4375rem 0;
-  }
-  .datasette-acl-share-dialog__general-row
-    .datasette-acl-share-dialog__avatar--initials {
-    position: static;
-    inset: auto;
-    z-index: auto;
-    flex: 0 0 auto;
-    font-size: 0.875rem;
-  }
-  .datasette-acl-share-dialog__general-text {
-    flex: 1 1 auto;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    line-height: 1.3;
-    gap: 0.125rem;
+  /* Public-audience rows reuse the roster row/avatar/controls styles; only the
+     audience picker, the empty state and the add/confirm controls are bespoke. */
+  .datasette-acl-share-dialog__general-empty {
+    margin: 0.25rem 0 0.5rem;
+    color: #57606a;
+    font-size: 0.8125rem;
   }
   .datasette-acl-share-dialog__general-principal {
     font-size: 0.875rem;
@@ -1704,6 +1801,36 @@
     border-radius: 6px;
     background: #fff;
     color: inherit;
-    align-self: flex-start;
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .datasette-acl-share-dialog__general-confirm {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 0.625rem;
+    margin-top: 0.375rem;
+    background: #fff8e6;
+    border: 1px solid #f0d48a;
+    border-radius: 8px;
+  }
+  .datasette-acl-share-dialog__general-confirm-text {
+    flex: 1 1 auto;
+    min-width: 0;
+    font-size: 0.8125rem;
+    line-height: 1.3;
+  }
+  .datasette-acl-share-dialog__general-cancel {
+    flex: 0 0 auto;
+    border: none;
+    background: none;
+    padding: 0.25rem 0.375rem;
+    color: #57606a;
+    font: inherit;
+    font-size: 0.8125rem;
+    cursor: pointer;
+  }
+  .datasette-acl-share-dialog__general-cancel:hover {
+    text-decoration: underline;
   }
 </style>

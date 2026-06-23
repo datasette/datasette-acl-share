@@ -586,114 +586,255 @@ describe("<datasette-acl-share-dialog> add-box pickers", () => {
 // --- general access --------------------------------------------------------
 
 describe("<datasette-acl-share-dialog> general access", () => {
-  it("choosing 'Anyone signed in' then a role issues an authenticated grant", async () => {
-    on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
+  // A ShareState with two independent public-audience grants at different roles —
+  // the whole point of the redesign (per-audience roles).
+  const withPublic = (...extra: ShareState["grants"]): ShareState => ({
+    ...STATE,
+    grants: [...STATE.grants, ...extra],
+  });
+
+  it("renders one row per public audience, each with its own role, and not in the people list", async () => {
+    on("/resource/", () =>
+      json(
+        withPublic(
+          { principal: "public", id: "everyone", role: "Viewer", actions: ["read"], kind: "public" },
+          { principal: "public", id: "authenticated", role: "Editor", actions: ["read", "write"], kind: "public" },
+        ),
+      ),
+    );
+    mount(BASE_ATTRS);
+
+    // Both audiences render their own role <select>, pre-set to their role.
+    const everyoneRole = page.getByRole("combobox", { name: "Role for Anyone", exact: true });
+    const authedRole = page.getByRole("combobox", { name: "Role for Anyone signed in" });
+    await expect.element(everyoneRole).toBeInTheDocument();
+    await expect.element(authedRole).toBeInTheDocument();
+    expect((everyoneRole.element() as HTMLSelectElement).value).toBe("Viewer");
+    expect((authedRole.element() as HTMLSelectElement).value).toBe("Editor");
+
+    // Public grants live ONLY in the General access section — the people roster
+    // still has its three non-public rows, and the audiences sit in their section.
+    const people = document.querySelector(
+      'section[aria-label="People with access"]',
+    )!;
+    const general = document.querySelector('section[aria-label="General access"]')!;
+    expect(
+      people.querySelectorAll(".datasette-acl-share-dialog__row").length,
+    ).toBe(3);
+    expect(
+      general.querySelectorAll("[data-principal-key^='public:']").length,
+    ).toBe(2);
+  });
+
+  it("changing a public audience's role calls UPDATE (atomic swap), never grant — the downgrade bug", async () => {
+    // Regression for: General access used additive `grant`, so an Editor→Viewer
+    // downgrade no-opped and the role snapped back to Editor on refresh.
+    on("/resource/paper-doc/mydb/42/update", (_url, init) => {
       const req = JSON.parse(init.body as string);
       return json({
         ok: true,
-        grant: {
-          principal: "public",
-          id: req.principal_type,
-          role: req.role,
-          actions: ["read", "write"],
-          kind: "public",
-        },
+        grant: { principal: "public", id: req.principal_type, role: req.role, actions: ["read"], kind: "public" },
       });
     });
-    on("/resource/", () => json(STATE));
+    on("/resource/", () =>
+      json(withPublic({ principal: "public", id: "everyone", role: "Editor", actions: ["read", "write"], kind: "public" })),
+    );
 
     const { events } = mount(BASE_ATTRS);
-    const principal = page.getByRole("combobox", { name: "General access", exact: true });
-    await expect.element(principal).toBeInTheDocument();
-    await principal.selectOptions("Anyone signed in");
+    const role = page.getByRole("combobox", { name: "Role for Anyone", exact: true });
+    await expect.element(role).toBeInTheDocument();
+    await role.selectOptions("Viewer");
 
     await vi.waitFor(() => {
-      const g = calls.find((c) => c.url.endsWith("/grant"));
-      expect(g).toBeTruthy();
-      expect(g!.body).toMatchObject({
-        principal_type: "authenticated",
-        role: "Editor",
-      });
+      const u = calls.find((c) => c.url.endsWith("/update"));
+      expect(u).toBeTruthy();
+      expect(u!.method).toBe("POST");
+      expect(u!.body).toEqual({ principal_type: "everyone", role: "Viewer" });
     });
-    await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(1));
+    // Crucially: NO additive grant was issued.
+    expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
+    await vi.waitFor(() => expect(events["share-updated"]).toHaveLength(1));
+    expect(events["share-updated"]![0]!.detail).toMatchObject({
+      principal: "public",
+      id: "everyone",
+      role: "Viewer",
+    });
   });
 
-  it("offers BOTH 'Anyone' (everyone) and 'Anyone signed in' (authenticated) options", async () => {
-    on("/resource/", () => json(STATE));
-    mount(BASE_ATTRS);
-    const principal = page.getByRole("combobox", { name: "General access", exact: true });
-    await expect.element(principal).toBeInTheDocument();
-    const sel = principal.element() as HTMLSelectElement;
-    const values = Array.from(sel.options).map((o) => o.value);
-    expect(values).toContain("everyone");
-    expect(values).toContain("authenticated");
-    expect(values).toContain(""); // Restricted
-  });
+  it("reproduces the original symptom: downgrading a public audience to Viewer survives a reload (no Editor snap-back)", async () => {
+    // The other test guards *which* endpoint fires. This one models acl's real
+    // action-set semantics so it reproduces the symptom you actually saw — set
+    // Viewer, refresh, it's back to Editor — and fails if the dialog ever
+    // regresses to the additive `grant` that can't remove the `write` action.
+    const ROLE_ACTIONS: Record<string, string[]> = {
+      Viewer: ["read"],
+      Editor: ["read", "write"],
+    };
+    // acl resolves a role as the highest-rank role whose actions ⊆ the set.
+    const resolveRole = (set: Set<string>): string | null =>
+      ["read", "write"].every((a) => set.has(a))
+        ? "Editor"
+        : set.has("read")
+          ? "Viewer"
+          : null;
+    // The audience starts at Editor (read + write).
+    const actions = new Set<string>(["read", "write"]);
+    const publicEntry = () => ({
+      principal: "public" as const,
+      id: "everyone",
+      role: resolveRole(actions),
+      actions: [...actions].sort(),
+      kind: "public" as const,
+    });
 
-  it("an existing public-audience grant pre-selects the control", async () => {
+    // POST update — atomic swap to exactly the role's actions (the fix).
+    on("/resource/paper-doc/mydb/42/update", (_url, init) => {
+      const req = JSON.parse(init.body as string);
+      actions.clear();
+      for (const a of ROLE_ACTIONS[req.role] ?? []) actions.add(a);
+      return json({ ok: true, grant: publicEntry() });
+    });
+    // POST grant — additive UNION (the old buggy behavior). Present so that a
+    // regression to grant-for-downgrade keeps `write` and snaps back to Editor.
+    on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
+      const req = JSON.parse(init.body as string);
+      for (const a of ROLE_ACTIONS[req.role] ?? []) actions.add(a);
+      return json({ ok: true, grant: publicEntry() });
+    });
+    // GET — resolves the role from the CURRENT action-set, like a page refresh.
     on("/resource/", () =>
-      json({
-        ...STATE,
-        grants: [
-          ...STATE.grants,
-          {
-            principal: "public",
-            id: "everyone",
-            role: "Viewer",
-            actions: ["read"],
-            kind: "public",
-          },
-        ],
-      }),
+      json({ ...STATE, grants: [...STATE.grants, publicEntry()] }),
     );
+
+    // Open the dialog: the audience reads as Editor. Downgrade it to Viewer.
     mount(BASE_ATTRS);
-    const principal = page.getByRole("combobox", { name: "General access", exact: true });
-    await expect.element(principal).toBeInTheDocument();
+    const role = page.getByRole("combobox", { name: "Role for Anyone", exact: true });
+    await expect.element(role).toBeInTheDocument();
+    expect((role.element() as HTMLSelectElement).value).toBe("Editor");
+    await role.selectOptions("Viewer");
+    // Wait for the mutation to land — deliberately endpoint-agnostic, so the
+    // FINAL (symptom) assertion is what distinguishes the fix from the bug:
+    // the buggy additive `grant` and the correct atomic `update` both POST here,
+    // but only `grant` leaves `write` behind for the reload to resolve as Editor.
     await vi.waitFor(() =>
-      expect((principal.element() as HTMLSelectElement).value).toBe("everyone"),
+      expect(
+        calls.some(
+          (c) =>
+            c.method === "POST" && /\/(update|grant)$/.test(c.url),
+        ),
+      ).toBe(true),
     );
-    const role = page.getByRole("combobox", { name: "General access role" });
+
+    // The refresh: tear down and reopen so the dialog re-fetches from acl.
+    document
+      .querySelectorAll("datasette-acl-share-dialog")
+      .forEach((n) => n.remove());
+    mount(BASE_ATTRS);
+    const roleAfter = page.getByRole("combobox", { name: "Role for Anyone", exact: true });
+    await expect.element(roleAfter).toBeInTheDocument();
+    // The bug read back "Editor" here. The atomic-update fix keeps it "Viewer".
     await vi.waitFor(() =>
-      expect((role.element() as HTMLSelectElement).value).toBe("Viewer"),
+      expect((roleAfter.element() as HTMLSelectElement).value).toBe("Viewer"),
     );
-    // Audience grant is NOT rendered in the people-with-access list.
-    expect(document.querySelectorAll("[data-principal-key='public:everyone']").length).toBe(0);
   });
 
-  it("switching to Restricted revokes the public-audience grant", async () => {
-    on("/resource/paper-doc/mydb/42/revoke", () => json({ ok: true, removed: 1 }));
+  it("removing a public audience calls revoke and emits share-revoked", async () => {
+    on("/resource/paper-doc/mydb/42/revoke", () => json({ ok: true, removed: ["read"] }));
     on("/resource/", () =>
-      json({
-        ...STATE,
-        grants: [
-          ...STATE.grants,
-          {
-            principal: "public",
-            id: "authenticated",
-            role: "Viewer",
-            actions: ["read"],
-            kind: "public",
-          },
-        ],
-      }),
+      json(withPublic({ principal: "public", id: "authenticated", role: "Viewer", actions: ["read"], kind: "public" })),
     );
+
     const { events } = mount(BASE_ATTRS);
-    const principal = page.getByRole("combobox", { name: "General access", exact: true });
-    await expect.element(principal).toBeInTheDocument();
-    await vi.waitFor(() =>
-      expect((principal.element() as HTMLSelectElement).value).toBe("authenticated"),
-    );
-    await principal.selectOptions("Restricted");
+    const removeBtn = page.getByRole("button", { name: "Remove Anyone signed in" });
+    await expect.element(removeBtn).toBeInTheDocument();
+    await removeBtn.click();
 
     await vi.waitFor(() => {
       const r = calls.find((c) => c.url.endsWith("/revoke"));
       expect(r).toBeTruthy();
-      expect(r!.body).toMatchObject({
-        principal_type: "authenticated",
+      expect(r!.body).toEqual({ principal_type: "authenticated" });
+    });
+    await vi.waitFor(() => expect(events["share-revoked"]).toHaveLength(1));
+    expect(events["share-revoked"]![0]!.detail).toMatchObject({
+      principal: "public",
+      id: "authenticated",
+    });
+  });
+
+  it("adding public access is two-step: Add arms a confirm, Confirm grants", async () => {
+    on("/resource/paper-doc/mydb/42/grant", (_url, init) => {
+      const req = JSON.parse(init.body as string);
+      return json({
+        ok: true,
+        grant: { principal: "public", id: req.principal_type, role: req.role, actions: ["read"], kind: "public" },
       });
     });
-    await vi.waitFor(() =>
-      expect(events["share-revoked"]!.length).toBeGreaterThan(0),
+    on("/resource/", () => json(STATE)); // no public grants yet
+
+    const { events } = mount(BASE_ATTRS);
+    // Default add control: the conservative role (Viewer) is preselected.
+    const audience = page.getByRole("combobox", { name: "Add public access" });
+    await expect.element(audience).toBeInTheDocument();
+    await audience.selectOptions("Anyone signed out"); // anonymous
+
+    // Clicking Add only arms the confirm — no grant yet.
+    await page.getByRole("button", { name: "Add public access" }).click();
+    expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
+    const confirm = page.getByRole("button", { name: "Confirm public access" });
+    await expect.element(confirm).toBeInTheDocument();
+
+    // Confirm issues the grant.
+    await confirm.click();
+    await vi.waitFor(() => {
+      const g = calls.find((c) => c.url.endsWith("/grant"));
+      expect(g).toBeTruthy();
+      expect(g!.body).toMatchObject({ principal_type: "anonymous", role: "Viewer" });
+    });
+    await vi.waitFor(() => expect(events["share-granted"]).toHaveLength(1));
+  });
+
+  it("Cancel on the add confirm issues no grant", async () => {
+    on("/resource/", () => json(STATE));
+    mount(BASE_ATTRS);
+
+    await page.getByRole("button", { name: "Add public access" }).click();
+    const cancel = page.getByRole("button", { name: "Cancel" });
+    await expect.element(cancel).toBeInTheDocument();
+    await cancel.click();
+    // Back to the add-row, nothing granted.
+    await expect
+      .element(page.getByRole("combobox", { name: "Add public access" }))
+      .toBeInTheDocument();
+    expect(calls.find((c) => c.url.endsWith("/grant"))).toBeFalsy();
+  });
+
+  it("does not offer 'everyone' as an addable audience (overlaps the disjoint pair)", async () => {
+    on("/resource/", () => json(STATE));
+    mount(BASE_ATTRS);
+    const audience = page.getByRole("combobox", { name: "Add public access" });
+    await expect.element(audience).toBeInTheDocument();
+    const values = Array.from((audience.element() as HTMLSelectElement).options).map(
+      (o) => o.value,
     );
+    expect(values).toEqual(["authenticated", "anonymous"]);
+    expect(values).not.toContain("everyone");
+  });
+
+  it("read-only mode shows audience roles as tags with no add/remove controls", async () => {
+    on("/resource/", () =>
+      json({
+        ...withPublic({ principal: "public", id: "everyone", role: "Viewer", actions: ["read"], kind: "public" }),
+        can_manage: false,
+      }),
+    );
+    mount(BASE_ATTRS);
+
+    await expect.element(page.getByText("Anyone", { exact: true })).toBeInTheDocument();
+    // No role <select> for the audience, no add control, no remove button.
+    expect(page.getByRole("combobox", { name: "Role for Anyone" }).query()).toBeNull();
+    expect(page.getByRole("combobox", { name: "Add public access" }).query()).toBeNull();
+    expect(
+      document.querySelectorAll(".datasette-acl-share-dialog__remove").length,
+    ).toBe(0);
   });
 });
