@@ -310,10 +310,26 @@ describe("<datasette-acl-share-dialog> people-with-access list", () => {
     await expect.element(page.getByText("Editor", { exact: true })).toBeInTheDocument();
   });
 
-  it("surfaces a load error", async () => {
-    on("/resource/", () => json({ error: "Cannot manage" }, 403));
+  it("surfaces a generic load error with the server message", async () => {
+    on("/resource/", () => json({ error: "Cannot manage" }, 500));
     mount(BASE_ATTRS);
     await expect.element(page.getByText("Cannot manage")).toBeInTheDocument();
+  });
+
+  it("shows a friendly permission message on a 403 load (manager-only read)", async () => {
+    on("/resource/", () => json({ error: "Cannot manage" }, 403));
+    mount(BASE_ATTRS);
+    // acl's read endpoint is manager-only; a 403 isn't a generic failure, so
+    // the raw server error is replaced with an explanatory message.
+    await expect
+      .element(
+        page.getByText(
+          "You don't have permission to manage sharing for this.",
+          { exact: false },
+        ),
+      )
+      .toBeInTheDocument();
+    expect(document.body.textContent).not.toContain("Cannot manage");
   });
 });
 
